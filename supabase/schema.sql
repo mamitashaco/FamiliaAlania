@@ -129,5 +129,146 @@ create table tb_archivos (
 create view vw_integrantes_con_edad as
 select i.*, extract(year from age(current_date, i.fecha_nacimiento))::int as edad from tb_integrantes i;
 
--- En producción: activar RLS y crear políticas que permitan SELECT a usuarios activos,
--- UPDATE/INSERT solo al propietario del registro y acceso total al administrador.
+-- Seguridad y acceso ---------------------------------------------------------
+-- La API debe emitir el UUID de tb_usuarios en el claim JWT "sub".
+-- Nunca se almacena una contraseña en texto plano: crypt() usa bcrypt.
+create or replace function fn_usuario_actual_id()
+returns uuid language sql stable as $$
+  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
+
+create or replace function fn_es_administrador()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from tb_usuarios
+    where id = fn_usuario_actual_id() and rol = 'administrador' and activo
+  )
+$$;
+
+create or replace function fn_crear_usuario(
+  p_codigo char(8), p_rol rol_usuario default 'integrante'
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if not fn_es_administrador() and exists(select 1 from tb_usuarios) then
+    raise exception 'Solo el administrador puede crear usuarios';
+  end if;
+  insert into tb_usuarios(codigo, clave_hash, rol)
+  values (p_codigo, crypt(p_codigo, gen_salt('bf')), p_rol)
+  returning id into v_id;
+  return v_id;
+end $$;
+
+create or replace function fn_validar_acceso(p_codigo char(8), p_clave text)
+returns table(usuario_id uuid, rol rol_usuario, debe_cambiar_clave boolean)
+language sql security definer set search_path = public as $$
+  select id, tb_usuarios.rol, tb_usuarios.debe_cambiar_clave
+  from tb_usuarios
+  where codigo = p_codigo and activo and clave_hash = crypt(p_clave, clave_hash)
+$$;
+
+create or replace function fn_cambiar_clave(p_clave_actual text, p_clave_nueva text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if length(p_clave_nueva) < 8 then raise exception 'La contraseña debe tener al menos 8 caracteres'; end if;
+  update tb_usuarios
+  set clave_hash = crypt(p_clave_nueva, gen_salt('bf')), debe_cambiar_clave = false, actualizado_en = now()
+  where id = fn_usuario_actual_id() and clave_hash = crypt(p_clave_actual, clave_hash);
+  if not found then raise exception 'Contraseña actual incorrecta'; end if;
+end $$;
+
+create or replace function fn_restablecer_clave(p_usuario_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not fn_es_administrador() then raise exception 'Acceso denegado'; end if;
+  update tb_usuarios
+  set clave_hash = crypt(codigo, gen_salt('bf')), debe_cambiar_clave = true, actualizado_en = now()
+  where id = p_usuario_id;
+end $$;
+
+alter table tb_usuarios enable row level security;
+alter table tb_integrantes enable row level security;
+alter table tb_informacion_laboral enable row level security;
+alter table tb_salud_perfil enable row level security;
+alter table tb_historial_medico enable row level security;
+alter table tb_medicamentos enable row level security;
+alter table tb_vacunas enable row level security;
+alter table tb_examenes enable row level security;
+alter table tb_signos_vitales enable row level security;
+alter table tb_contactos_emergencia enable row level security;
+alter table tb_fechas_importantes enable row level security;
+alter table tb_cuentas_financieras enable row level security;
+alter table tb_movimientos_financieros enable row level security;
+alter table tb_reportes_financieros enable row level security;
+alter table tb_tiendas enable row level security;
+alter table tb_productos enable row level security;
+alter table tb_precios enable row level security;
+alter table tb_estudios enable row level security;
+alter table tb_cursos_certificados enable row level security;
+alter table tb_seguros enable row level security;
+alter table tb_viajes_eventos enable row level security;
+alter table tb_viajes_eventos_integrantes enable row level security;
+alter table tb_mascotas enable row level security;
+alter table tb_historial_veterinario enable row level security;
+alter table tb_viviendas enable row level security;
+alter table tb_archivos enable row level security;
+
+-- Todos los usuarios activos pueden leer la información familiar.
+create policy usuarios_lectura on tb_usuarios for select using (fn_usuario_actual_id() is not null);
+create policy integrantes_lectura on tb_integrantes for select using (fn_usuario_actual_id() is not null);
+create policy integrantes_edicion on tb_integrantes for update
+  using (usuario_id = fn_usuario_actual_id() or fn_es_administrador())
+  with check (usuario_id = fn_usuario_actual_id() or fn_es_administrador());
+create policy integrantes_admin_crear on tb_integrantes for insert with check (fn_es_administrador());
+create policy usuarios_perfil on tb_usuarios for update
+  using (id = fn_usuario_actual_id() or fn_es_administrador())
+  with check (id = fn_usuario_actual_id() or fn_es_administrador());
+
+-- Las tablas ligadas a un integrante heredan la propiedad de su perfil.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'tb_informacion_laboral','tb_salud_perfil','tb_historial_medico','tb_medicamentos',
+    'tb_vacunas','tb_examenes','tb_signos_vitales','tb_contactos_emergencia',
+    'tb_fechas_importantes','tb_cuentas_financieras','tb_estudios',
+    'tb_cursos_certificados','tb_seguros'
+  ] loop
+    execute format('create policy %I on %I for select using (fn_usuario_actual_id() is not null)', t || '_lectura', t);
+    execute format(
+      'create policy %I on %I for all using (fn_es_administrador() or exists(select 1 from tb_integrantes i where i.id = integrante_id and i.usuario_id = fn_usuario_actual_id())) with check (fn_es_administrador() or exists(select 1 from tb_integrantes i where i.id = integrante_id and i.usuario_id = fn_usuario_actual_id()))',
+      t || '_propietario', t
+    );
+  end loop;
+end $$;
+
+-- Datos compartidos: lectura familiar; escritura del administrador o autor.
+create policy movimientos_lectura on tb_movimientos_financieros for select using (fn_usuario_actual_id() is not null);
+create policy movimientos_propietario on tb_movimientos_financieros for all
+  using (fn_es_administrador() or exists(select 1 from tb_integrantes i where i.id = integrante_id and i.usuario_id = fn_usuario_actual_id()))
+  with check (fn_es_administrador() or exists(select 1 from tb_integrantes i where i.id = integrante_id and i.usuario_id = fn_usuario_actual_id()));
+create policy precios_lectura on tb_precios for select using (fn_usuario_actual_id() is not null);
+create policy precios_autor on tb_precios for all
+  using (registrado_por = fn_usuario_actual_id() or fn_es_administrador())
+  with check (registrado_por = fn_usuario_actual_id() or fn_es_administrador());
+create policy archivos_lectura on tb_archivos for select using (fn_usuario_actual_id() is not null);
+create policy archivos_autor on tb_archivos for all
+  using (subido_por = fn_usuario_actual_id() or fn_es_administrador())
+  with check (subido_por = fn_usuario_actual_id() or fn_es_administrador());
+create policy viajes_lectura on tb_viajes_eventos for select using (fn_usuario_actual_id() is not null);
+create policy viajes_autor on tb_viajes_eventos for all
+  using (creado_por = fn_usuario_actual_id() or fn_es_administrador())
+  with check (creado_por = fn_usuario_actual_id() or fn_es_administrador());
+
+-- Catálogos y registros comunes administrados por el rol administrador.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'tb_reportes_financieros','tb_tiendas','tb_productos','tb_viajes_eventos_integrantes',
+    'tb_mascotas','tb_historial_veterinario','tb_viviendas'
+  ] loop
+    execute format('create policy %I on %I for select using (fn_usuario_actual_id() is not null)', t || '_lectura', t);
+    execute format('create policy %I on %I for all using (fn_es_administrador()) with check (fn_es_administrador())', t || '_admin', t);
+  end loop;
+end $$;
