@@ -120,27 +120,21 @@ export default function Home() {
 
   return (
     <div className={`aplicacion ${oscuro ? "dark" : ""}`}>
-      <aside className="sidebar">
-        <div className="identidad"><div className="marca pequena">FA</div><div><strong>Familia Alania</strong><span>Nuestro espacio</span></div></div>
-        <nav aria-label="Navegación principal">
-          {navegacion.map(([nombre, icono]) => (
-            <button key={nombre} className={seccion === nombre ? "activo" : ""} onClick={() => setSeccion(nombre)}>
-              <Icono>{icono}</Icono><span>{nombre}</span>{nombre === "Salud" && <b>2</b>}
-            </button>
-          ))}
-        </nav>
-        <div className="usuario">
-          <span className="avatar">RA</span><div><strong>Rosa Alania</strong><small>Administradora</small></div><button onClick={() => setSesion(false)} title="Cerrar sesión">↗</button>
-        </div>
-      </aside>
-
       <main className="contenido">
         <header className="barra">
-          <div className="miga">Familia Alania <span>/</span> {seccion}</div>
+          <div className="marca-nav" title="Familia Alania">FA</div>
+          <nav className="nav-superior" aria-label="Navegación principal">
+            {navegacion.map(([nombre]) => (
+              <button key={nombre} className={seccion === nombre ? "activo" : ""} onClick={() => setSeccion(nombre)}>
+                {nombre}{nombre === "Salud" && <b>2</b>}
+              </button>
+            ))}
+          </nav>
           <div className="acciones">
-            <button className="boton-icono" aria-label="Buscar">⌕</button>
+            <div className="buscar-global">⌕ <span>Buscar...</span><kbd>⌘ K</kbd></div>
             <button className="boton-icono notificacion" aria-label="Notificaciones">♢<b>3</b></button>
-            <button className="secundario" onClick={() => setOscuro(!oscuro)}>{oscuro ? "☀ Claro" : "☾ Oscuro"}</button>
+            <button className="boton-icono" onClick={() => setOscuro(!oscuro)} aria-label="Cambiar tema">{oscuro ? "☀" : "☾"}</button>
+            <button className="avatar avatar-boton" onClick={() => setSesion(false)} title="Cerrar sesión">RA</button>
           </div>
         </header>
 
