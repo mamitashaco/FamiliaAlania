@@ -11,10 +11,12 @@ const navegacion = [
 ];
 
 const integrantes = [
-  { iniciales: "RA", nombre: "Rosa Alania", rol: "Administradora", edad: "68 años", lugar: "Lima", codigo: "•••• 1024" },
-  { iniciales: "CA", nombre: "Carlos Alania", rol: "Integrante", edad: "70 años", lugar: "Lima", codigo: "•••• 2086" },
-  { iniciales: "MA", nombre: "María Alania", rol: "Integrante", edad: "42 años", lugar: "Arequipa", codigo: "•••• 3142" },
-  { iniciales: "JA", nombre: "Jorge Alania", rol: "Integrante", edad: "39 años", lugar: "Cusco", codigo: "•••• 4098" },
+  { iniciales: "RA", nombre: "Rosa Elena Alania Quispe", rol: "Administradora", edad: "68 años", lugar: "Lima", codigo: "•••• 1024" },
+  { iniciales: "CA", nombre: "Carlos Alberto Alania Soto", rol: "Integrante", edad: "70 años", lugar: "Lima", codigo: "•••• 2086" },
+  { iniciales: "MA", nombre: "María Fernanda Alania", rol: "Integrante", edad: "42 años", lugar: "Arequipa", codigo: "•••• 3142" },
+  { iniciales: "JA", nombre: "Jorge Luis Alania", rol: "Integrante", edad: "39 años", lugar: "Cusco", codigo: "•••• 4098" },
+  { iniciales: "LA", nombre: "Lucía Alania Vargas", rol: "Integrante", edad: "16 años", lugar: "Lima", codigo: "•••• 5184" },
+  { iniciales: "DA", nombre: "Diego Alania Vargas", rol: "Integrante", edad: "12 años", lugar: "Lima", codigo: "•••• 6210" },
 ];
 
 const datos: Record<string, Registro[]> = {
@@ -22,36 +24,52 @@ const datos: Record<string, Registro[]> = {
     { titulo: "Control cardiológico", detalle: "Carlos Alania · Clínica San Felipe", meta: "03 ago 2026", estado: "Próximo" },
     { titulo: "Losartán 50 mg", detalle: "1 tableta cada 24 horas", meta: "Renovar en 6 días", estado: "Atención" },
     { titulo: "Vacuna influenza", detalle: "Rosa Alania · Dosis anual", meta: "Aplicada 18 jun 2026", estado: "Al día" },
+    { titulo: "Hemograma completo", detalle: "Rosa Alania · Laboratorio Roe", meta: "12 jul 2026", estado: "Normal" },
+    { titulo: "Presión arterial", detalle: "Carlos · 128/82 mmHg · Pulso 72", meta: "Hoy, 08:30", estado: "Estable" },
   ],
   Finanzas: [
     { titulo: "Ingresos familiares", detalle: "Julio 2026", meta: "S/ 7,850.00", estado: "+4.2%" },
     { titulo: "Gastos del mes", detalle: "Hogar, salud y alimentación", meta: "S/ 4,280.00", estado: "54.5%" },
     { titulo: "Balance disponible", detalle: "Actualizado hoy", meta: "S/ 3,570.00", estado: "Positivo" },
+    { titulo: "Compra de supermercado", detalle: "Alimentación · Plaza Vea", meta: "− S/ 286.40", estado: "Hoy" },
+    { titulo: "Pago de electricidad", detalle: "Servicios · Luz del Sur", meta: "− S/ 164.80", estado: "Pagado" },
   ],
   Precios: [
     { titulo: "Aceite vegetal 1 L", detalle: "Plaza Vea · Botella", meta: "S/ 9.90", estado: "Mejor precio" },
     { titulo: "Leche evaporada 400 g", detalle: "Tottus · Lata", meta: "S/ 4.20", estado: "−6%" },
     { titulo: "Arroz extra 5 kg", detalle: "Metro · Bolsa", meta: "S/ 22.90", estado: "Estable" },
+    { titulo: "Detergente 2.6 kg", detalle: "Makro · Bolsa", meta: "S/ 27.50", estado: "−12%" },
+    { titulo: "Papel higiénico 24 und.", detalle: "Tottus · Paquete", meta: "S/ 21.90", estado: "Mejor precio" },
   ],
   Educación: [
     { titulo: "Certificado de Excel avanzado", detalle: "María · Universidad del Pacífico", meta: "PDF · 1.8 MB", estado: "Verificado" },
     { titulo: "Título profesional", detalle: "Jorge · Universidad Nacional", meta: "Imagen · 2.4 MB", estado: "Archivo" },
+    { titulo: "Curso de inglés B2", detalle: "Lucía · ICPNA", meta: "PDF · 920 KB", estado: "En curso" },
+    { titulo: "Constancia de matrícula", detalle: "Diego · Colegio San Marcos", meta: "PDF · 640 KB", estado: "2026" },
   ],
   Seguros: [
     { titulo: "Seguro de salud familiar", detalle: "Rímac · Póliza 0089214", meta: "Vence 18 dic 2026", estado: "Vigente" },
     { titulo: "Seguro vehicular", detalle: "Pacífico · Toyota Corolla", meta: "Vence 04 oct 2026", estado: "Por renovar" },
+    { titulo: "Seguro del hogar", detalle: "Mapfre · Casa familiar Surco", meta: "Vence 22 feb 2027", estado: "Vigente" },
+    { titulo: "SOAT", detalle: "La Positiva · Placa BKT-582", meta: "Vence 09 nov 2026", estado: "Vigente" },
   ],
   "Viajes y eventos": [
     { titulo: "Reunión familiar 2026", detalle: "Cieneguilla · 12 participantes", meta: "16 ago · 12:00", estado: "Confirmado" },
     { titulo: "Viaje a Arequipa", detalle: "4 integrantes · 5 días", meta: "02–07 sep", estado: "Planificando" },
+    { titulo: "Aniversario de Rosa y Carlos", detalle: "Cena familiar · Miraflores", meta: "28 ago · 20:00", estado: "Reservado" },
+    { titulo: "Paseo a Lunahuaná", detalle: "6 integrantes · Presupuesto S/ 1,200", meta: "10–11 oct", estado: "Propuesta" },
   ],
   Mascotas: [
     { titulo: "Luna", detalle: "Golden retriever · 5 años", meta: "Vacuna: 12 ago", estado: "Control pendiente" },
     { titulo: "Milo", detalle: "Gato mestizo · 3 años", meta: "Último control: 02 jul", estado: "Saludable" },
+    { titulo: "Desparasitación de Luna", detalle: "PetSalud · Dra. Valeria Ríos", meta: "15 jun 2026", estado: "Completado" },
+    { titulo: "Control dental de Milo", detalle: "Veterinaria San Borja", meta: "26 ago 2026", estado: "Programado" },
   ],
   "Archivos históricos": [
     { titulo: "Álbum familiar 1984", detalle: "36 fotografías digitalizadas", meta: "Actualizado 14 jul", estado: "Fotos" },
     { titulo: "Partida de matrimonio", detalle: "Rosa y Carlos Alania", meta: "PDF · 840 KB", estado: "Documento" },
+    { titulo: "Fotografías de Huancayo 1998", detalle: "18 imágenes restauradas", meta: "Actualizado 05 jul", estado: "Fotos" },
+    { titulo: "Árbol genealógico Alania", detalle: "Cinco generaciones documentadas", meta: "PDF · 3.2 MB", estado: "Historia" },
   ],
 };
 
@@ -59,6 +77,7 @@ const fechas = [
   { dia: "24", mes: "JUL", titulo: "Cumpleaños de Rosa", detalle: "En 4 días · 68 años" },
   { dia: "03", mes: "AGO", titulo: "Control cardiológico", detalle: "Carlos · Clínica San Felipe" },
   { dia: "12", mes: "AGO", titulo: "Vacuna anual de Luna", detalle: "Veterinaria PetSalud" },
+  { dia: "16", mes: "AGO", titulo: "Reunión familiar", detalle: "Cieneguilla · 12:00" },
 ];
 
 function Icono({ children }: { children: React.ReactNode }) {
@@ -139,6 +158,7 @@ export default function Home() {
         </header>
 
         <div className="pagina">
+          <div className="aviso-demo"><span>DATOS DE DEMOSTRACIÓN</span><p>Explora libremente. La información mostrada es ficticia y sirve para evaluar el diseño.</p></div>
           {seccion === "Inicio" ? <Inicio onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")} /> :
             seccion === "Integrantes" ? (
               <VistaIntegrantes buscar={buscar} setBuscar={setBuscar} personas={personasFiltradas} onAdd={() => setModal("Nuevo integrante")} />
@@ -167,7 +187,7 @@ function Inicio({ onNavigate, onAdd }: { onNavigate: (s: string) => void; onAdd:
       <button className="primario" onClick={onAdd}>＋ Agregar registro</button>
     </section>
     <section className="metricas">
-      <article><span>Próximas fechas</span><strong>6</strong><small>En los siguientes 30 días</small></article>
+      <article><span>Próximas fechas</span><strong>8</strong><small>En los siguientes 30 días</small></article>
       <article><span>Gastos de julio</span><strong>S/ 4,280</strong><small>12% menos que junio</small></article>
       <article><span>Ahorro en precios</span><strong>S/ 186</strong><small>Comparando 24 productos</small></article>
     </section>
@@ -177,7 +197,7 @@ function Inicio({ onNavigate, onAdd }: { onNavigate: (s: string) => void; onAdd:
         <div className="tarjeta lista-fechas">{fechas.map((f) => <article key={f.titulo}><div className="fecha"><strong>{f.dia}</strong><span>{f.mes}</span></div><div><h3>{f.titulo}</h3><p>{f.detalle}</p></div><button>›</button></article>)}</div>
       </section>
       <section>
-        <div className="cabecera-seccion"><div><h2>Integrantes</h2><p>4 miembros registrados</p></div><button onClick={() => onNavigate("Integrantes")}>Ver todos →</button></div>
+        <div className="cabecera-seccion"><div><h2>Integrantes</h2><p>6 miembros registrados</p></div><button onClick={() => onNavigate("Integrantes")}>Ver todos →</button></div>
         <div className="tarjeta lista-personas">{integrantes.slice(0, 3).map((p) => <button key={p.nombre} onClick={() => onNavigate("Integrantes")}><span className="avatar">{p.iniciales}</span><span><strong>{p.nombre}</strong><small>{p.edad} · {p.lugar}</small></span><i>›</i></button>)}</div>
       </section>
     </div>
