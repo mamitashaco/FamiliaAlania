@@ -154,7 +154,7 @@ begin
     raise exception 'Solo el administrador puede crear usuarios';
   end if;
   insert into tb_usuarios(codigo, clave_hash, rol)
-  values (p_codigo, crypt(p_codigo, gen_salt('bf')), p_rol)
+  values (p_codigo, extensions.crypt(p_codigo, extensions.gen_salt('bf')), p_rol)
   returning id into v_id;
   return v_id;
 end $$;
@@ -164,7 +164,7 @@ returns table(usuario_id uuid, rol rol_usuario, debe_cambiar_clave boolean)
 language sql security definer set search_path = public as $$
   select id, tb_usuarios.rol, tb_usuarios.debe_cambiar_clave
   from tb_usuarios
-  where codigo = p_codigo and activo and clave_hash = crypt(p_clave, clave_hash)
+  where codigo = p_codigo and activo and clave_hash = extensions.crypt(p_clave, clave_hash)
 $$;
 
 create or replace function fn_cambiar_clave(p_clave_actual text, p_clave_nueva text)
@@ -172,8 +172,8 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   if length(p_clave_nueva) < 8 then raise exception 'La contraseña debe tener al menos 8 caracteres'; end if;
   update tb_usuarios
-  set clave_hash = crypt(p_clave_nueva, gen_salt('bf')), debe_cambiar_clave = false, actualizado_en = now()
-  where id = fn_usuario_actual_id() and clave_hash = crypt(p_clave_actual, clave_hash);
+  set clave_hash = extensions.crypt(p_clave_nueva, extensions.gen_salt('bf')), debe_cambiar_clave = false, actualizado_en = now()
+  where id = fn_usuario_actual_id() and clave_hash = extensions.crypt(p_clave_actual, clave_hash);
   if not found then raise exception 'Contraseña actual incorrecta'; end if;
 end $$;
 
@@ -182,7 +182,7 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   if not fn_es_administrador() then raise exception 'Acceso denegado'; end if;
   update tb_usuarios
-  set clave_hash = crypt(codigo, gen_salt('bf')), debe_cambiar_clave = true, actualizado_en = now()
+  set clave_hash = extensions.crypt(codigo, extensions.gen_salt('bf')), debe_cambiar_clave = true, actualizado_en = now()
   where id = p_usuario_id;
 end $$;
 
