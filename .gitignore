@@ -20,7 +20,11 @@
 
 # misc
 .DS_Store
+desktop.ini
 *.pem
+*.tar.gz
+/index.html
+/.sites-package-stage/
 
 # debug
 npm-debug.log*
