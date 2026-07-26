@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   if (!sesionAdministrador(request)) return NextResponse.json({ error: "Acceso exclusivo del administrador" }, { status: 403 });
-  const { id, nombre_completo, codigo, rol } = await request.json();
+  const { id, nombre_completo, codigo, rol, restablecer } = await request.json();
   const nombre = String(nombre_completo ?? "").trim();
   const nuevoCodigo = String(codigo ?? "").trim();
   if (!id || !nombre) return NextResponse.json({ error: "El nombre completo es obligatorio" }, { status: 400 });
@@ -32,7 +32,7 @@ export async function PATCH(request: NextRequest) {
   if (errorIntegrante) return NextResponse.json({ error: errorIntegrante.message }, { status: 500 });
   if (!integrante.usuario_id) {
     if (!nuevoCodigo) return NextResponse.json({ error: "Ingresa un código de 8 dígitos para crear el acceso" }, { status: 400 });
-    const claveHash = await bcrypt.hash(nuevoCodigo, 10);
+    const claveHash = (await bcrypt.hash(nuevoCodigo, 10)).replace(/^\$2b\$/, "$2a$");
     const { data: nuevoUsuario, error: errorUsuario } = await supabase.from("tb_usuarios").insert({
       codigo: nuevoCodigo, clave_hash: claveHash, rol: rol ?? "integrante", debe_cambiar_clave: true,
     }).select("id").single();
@@ -42,15 +42,21 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ guardado: true, accesoCreado: true });
   }
   if (integrante.usuario_id && nuevoCodigo) {
+    const { data: usuarioExistente } = await supabase.from("tb_usuarios").select("codigo,rol").eq("id", integrante.usuario_id).single();
     if (rol === "integrante") {
-      const { data: usuarioActual } = await supabase.from("tb_usuarios").select("rol").eq("id", integrante.usuario_id).single();
-      if (usuarioActual?.rol === "administrador") {
+      if (usuarioExistente?.rol === "administrador") {
         const { count } = await supabase.from("tb_usuarios").select("id", { count: "exact", head: true }).eq("rol", "administrador").eq("activo", true);
         if ((count ?? 0) <= 1) return NextResponse.json({ error: "Debe existir al menos otro administrador antes de cambiar este rol" }, { status: 400 });
       }
     }
-    const { error } = await supabase.from("tb_usuarios").update({ codigo: nuevoCodigo, rol, actualizado_en: new Date().toISOString() }).eq("id", integrante.usuario_id);
+    const codigoCambio = usuarioExistente?.codigo?.trim() !== nuevoCodigo;
+    const actualizacion: Record<string, unknown> = { codigo: nuevoCodigo, rol, actualizado_en: new Date().toISOString() };
+    if (codigoCambio || restablecer) {
+      actualizacion.clave_hash = (await bcrypt.hash(nuevoCodigo, 10)).replace(/^\$2b\$/, "$2a$");
+      actualizacion.debe_cambiar_clave = true;
+    }
+    const { error } = await supabase.from("tb_usuarios").update(actualizacion).eq("id", integrante.usuario_id);
     if (error) return NextResponse.json({ error: error.code === "23505" ? "Ese código ya está siendo utilizado" : error.message }, { status: 500 });
   }
-  return NextResponse.json({ guardado: true });
+  return NextResponse.json({ guardado: true, claveRestablecida: Boolean(restablecer) });
 }

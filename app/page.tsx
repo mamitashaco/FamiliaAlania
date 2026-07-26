@@ -316,8 +316,8 @@ function VistaConfiguracion({ onChanged }: { onChanged: () => void }) {
     setUsuarios(json.integrantes ?? []);
   }
   useEffect(() => { cargarConfiguracion(); }, []);
-  async function guardarUsuario(usuario: UsuarioConfig) {
-    const respuesta = await fetch("/api/configuracion", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(usuario) });
+  async function guardarUsuario(usuario: UsuarioConfig, restablecer = false) {
+    const respuesta = await fetch("/api/configuracion", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...usuario, restablecer }) });
     const json = await respuesta.json();
     if (!respuesta.ok) { setError(json.error ?? "No se pudo guardar"); return; }
     setError(""); setGuardado(usuario.id); window.setTimeout(() => setGuardado(""), 1800); await cargarConfiguracion(); onChanged();
@@ -330,7 +330,7 @@ function VistaConfiguracion({ onChanged }: { onChanged: () => void }) {
       <label><span>Nombre completo</span><input value={u.nombre_completo} onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, nombre_completo: e.target.value } : x))} /></label>
       <label><span>{u.usuario_id ? "Código de acceso" : "Asignar código de acceso"}</span><input inputMode="numeric" maxLength={8} value={u.codigo} placeholder="8 dígitos" onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, codigo: e.target.value.replace(/\D/g, "") } : x))} /></label>
       <label><span>Rol</span><select value={u.rol ?? "integrante"} onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, rol: e.target.value as "administrador" | "integrante" } : x))}><option value="integrante">Integrante</option><option value="administrador">Administrador</option></select></label>
-      <div className="guardar-config"><button className="primario">Guardar</button>{guardado === u.id && <small>✓ Guardado</small>}</div>
+      <div className="guardar-config"><button className="primario">Guardar</button>{u.usuario_id && <button type="button" className="restablecer" onClick={() => guardarUsuario(u, true)}>Restablecer contraseña</button>}{guardado === u.id && <small>✓ Guardado</small>}</div>
     </form>)}</section>
   </>;
 }
