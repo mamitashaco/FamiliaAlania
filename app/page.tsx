@@ -297,11 +297,15 @@ export default function Home() {
     setPrecios((json.precios ?? []).map((registro: Record<string, any>) => {
       const producto = relacionUnica(registro.tb_productos);
       const tienda = relacionUnica(registro.tb_tiendas);
+      const precio = Number(registro.precio);
+      const costo = Number(registro.costo_unitario);
       return {
         titulo: producto.descripcion ?? "Producto",
-        detalle: [producto.categoria, producto.presentacion].filter(Boolean).join(" · ") || "Sin categoría",
-        meta: `${tienda.nombre ?? "Tienda"} · ${new Date(registro.registrado_en).toLocaleDateString("es-PE")}`,
-        estado: `S/ ${Number(registro.precio).toFixed(2)}`,
+        detalle: `${tienda.nombre ?? "Tienda"} S/${precio.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${producto.presentacion ?? ""}`,
+        meta: Number.isFinite(costo)
+          ? `S/${costo.toLocaleString("es-PE", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`
+          : "—",
+        estado: producto.categoria ?? "Sin categoría",
       };
     }));
   }
@@ -1455,6 +1459,19 @@ function VistaModulo({
   onAdd: () => void;
 }) {
   const [pestanaActiva, setPestanaActiva] = useState("Todos");
+  const [busquedaModulo, setBusquedaModulo] = useState("");
+  const [categoriaModulo, setCategoriaModulo] = useState("Todas");
+  const categoriasModulo = Array.from(
+    new Set(registros.map((registro) => registro.estado).filter(Boolean)),
+  ) as string[];
+  const registrosVisibles =
+    titulo === "Precios"
+      ? registros.filter(
+          (registro) =>
+            registro.titulo.toLowerCase().includes(busquedaModulo.toLowerCase()) &&
+            (categoriaModulo === "Todas" || registro.estado === categoriaModulo),
+        )
+      : registros;
   const descripciones: Record<string, string> = {
     Salud:
       "Historial médico, medicamentos, vacunas, exámenes y signos vitales.",
@@ -1501,36 +1518,44 @@ function VistaModulo({
       </section>
       {titulo === "Precios" && (
         <section className="comparador tarjeta">
-          <div>
-            <span className="etiqueta">COMPARADOR</span>
-            <h2>Encuentra el mejor precio</h2>
-            <p>
-              Busca un producto y compara el último precio registrado en cada
-              tienda.
-            </p>
-          </div>
           <div className="buscador grande">
-            ⌕<input placeholder="Ej. aceite vegetal, arroz, leche…" />
+            ⌕
+            <input
+              placeholder="Buscar producto…"
+              value={busquedaModulo}
+              onChange={(e) => setBusquedaModulo(e.target.value)}
+            />
           </div>
+          <select
+            aria-label="Filtrar por categoría"
+            value={categoriaModulo}
+            onChange={(e) => setCategoriaModulo(e.target.value)}
+          >
+            <option>Todas</option>
+            {categoriasModulo.map((categoria) => (
+              <option key={categoria}>{categoria}</option>
+            ))}
+          </select>
         </section>
       )}
-      {pestanaActiva === "Todos" && registros.length ? (
+      {pestanaActiva === "Todos" && registrosVisibles.length ? (
         <section className="tarjeta tabla">
           <div className="tabla-cabecera">
-            <span>Registro</span>
-            <span>Detalle</span>
-            <span>Información</span>
-            <span>Estado</span>
+            <span>{titulo === "Precios" ? "Descripción de producto" : "Registro"}</span>
+            <span>{titulo === "Precios" ? "Información" : "Detalle"}</span>
+            <span>{titulo === "Precios" ? "Valor" : "Información"}</span>
+            <span>{titulo === "Precios" ? "Categoría" : "Estado"}</span>
           </div>
-          {registros.map((r) => (
-            <button className="tabla-fila" key={r.titulo}>
+          {registrosVisibles.map((r, indice) => (
+            <button className="tabla-fila" key={`${r.titulo}-${r.detalle}-${indice}`}>
               <span>
                 <i className="punto" /> <strong>{r.titulo}</strong>
               </span>
               <span>{r.detalle}</span>
               <span>{r.meta}</span>
               <span>
-                <b className="insignia">{r.estado}</b> ›
+                <b className={titulo === "Precios" ? "" : "insignia"}>{r.estado}</b>
+                {titulo === "Precios" ? "" : " ›"}
               </span>
             </button>
           ))}
@@ -2526,18 +2551,24 @@ function Modal({
         <form onSubmit={onSave}>
           <div className="campos">
             {seccion === "Precios" && (
-              <label>
-                <span>
-                  <CalendarDays size={15} aria-hidden="true" /> Fecha{" "}
-                  <b className="obligatorio">*</b>
-                </span>
-                <input
-                  name="fecha"
-                  required
-                  type="date"
-                  defaultValue={new Date().toLocaleDateString("sv-SE")}
-                />
-              </label>
+              <div className="fila-categoria-fecha">
+                <label>
+                  <span>
+                    Categoría <b className="obligatorio">*</b>
+                  </span>
+                  <input name="categoria" required placeholder="Ej. Desodorante gel" />
+                </label>
+                <label className="fecha-icono-precio" title="Modificar fecha">
+                  <CalendarDays size={19} aria-hidden="true" />
+                  <input
+                    name="fecha"
+                    required
+                    type="date"
+                    aria-label="Fecha del precio"
+                    defaultValue={new Date().toLocaleDateString("sv-SE")}
+                  />
+                </label>
+              </div>
             )}
             <label className={seccion === "Precios" ? "ancho" : ""}>
               <span>
@@ -2588,17 +2619,11 @@ function Modal({
                     placeholder="0.00"
                   />
                 </label>
-                <label>
+                <label className="ancho">
                   <span>
                     Tienda <b className="obligatorio">*</b>
                   </span>
                   <input name="tienda" required placeholder="Nombre de la tienda" />
-                </label>
-                <label>
-                  <span>
-                    Categoría <b className="obligatorio">*</b>
-                  </span>
-                  <input name="categoria" required placeholder="Ej. Alimentos" />
                 </label>
               </>
             )}
