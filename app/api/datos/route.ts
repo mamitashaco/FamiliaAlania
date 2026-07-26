@@ -100,10 +100,6 @@ export async function PATCH(request: NextRequest) {
       alergias: cuerpo.alergias || null, enfermedades_relevantes: cuerpo.enfermedades_relevantes || null,
       medicacion_habitual: cuerpo.medicacion_habitual || null, medico_referencia: cuerpo.medico_referencia || null,
     }],
-    ["tb_cuentas_financieras", {
-      integrante_id: id, banco_principal: cuerpo.banco_principal || null,
-      tipo_cuenta: cuerpo.tipo_cuenta || null, observaciones: cuerpo.observaciones_financieras || null,
-    }],
   ];
   for (const [tabla, valores] of relaciones) {
     await supabase.from(tabla).delete().eq("integrante_id", id);
@@ -111,20 +107,30 @@ export async function PATCH(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  await supabase.from("tb_contactos_emergencia").delete().eq("integrante_id", id);
-  if (cuerpo.contacto_nombre || cuerpo.contacto_telefono) {
-    const { error } = await supabase.from("tb_contactos_emergencia").insert({
-      integrante_id: id, nombre: cuerpo.contacto_nombre || "Sin nombre",
-      relacion: cuerpo.contacto_relacion || null, telefono: cuerpo.contacto_telefono || "",
-    });
+  const cuentas = Array.isArray(cuerpo.cuentas) ? cuerpo.cuentas.filter((x: Record<string, string>) => x.banco_principal || x.tipo_cuenta || x.observaciones) : [];
+  await supabase.from("tb_cuentas_financieras").delete().eq("integrante_id", id);
+  if (cuentas.length) {
+    const { error } = await supabase.from("tb_cuentas_financieras").insert(cuentas.map((x: Record<string, string>) => ({
+      integrante_id: id, banco_principal: x.banco_principal || null, tipo_cuenta: x.tipo_cuenta || null, observaciones: x.observaciones || null,
+    })));
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const contactos = Array.isArray(cuerpo.contactos) ? cuerpo.contactos.filter((x: Record<string, string>) => x.nombre || x.telefono) : [];
+  await supabase.from("tb_contactos_emergencia").delete().eq("integrante_id", id);
+  if (contactos.length) {
+    const { error } = await supabase.from("tb_contactos_emergencia").insert(contactos.map((x: Record<string, string>, i: number) => ({
+      integrante_id: id, nombre: x.nombre || "Sin nombre", relacion: x.relacion || null, telefono: x.telefono || "", prioridad: i + 1,
+    })));
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const fechas = Array.isArray(cuerpo.fechas) ? cuerpo.fechas.filter((x: Record<string, string>) => x.titulo && x.fecha) : [];
   await supabase.from("tb_fechas_importantes").delete().eq("integrante_id", id);
-  if (cuerpo.fecha_titulo && cuerpo.fecha_importante) {
-    const { error } = await supabase.from("tb_fechas_importantes").insert({
-      integrante_id: id, titulo: cuerpo.fecha_titulo, fecha: cuerpo.fecha_importante,
-    });
+  if (fechas.length) {
+    const { error } = await supabase.from("tb_fechas_importantes").insert(fechas.map((x: Record<string, string>) => ({
+      integrante_id: id, titulo: x.titulo, fecha: x.fecha,
+    })));
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

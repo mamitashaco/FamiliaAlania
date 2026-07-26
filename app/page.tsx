@@ -5,13 +5,15 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Registro = { titulo: string; detalle: string; meta: string; estado?: string };
 type Integrante = {
   id: string; usuarioId: string | null; iniciales: string; nombre: string; rol: string; edad: string; lugar: string; codigo: string;
+  actualizado_en?: string;
   dni?: string; fecha_nacimiento?: string; lugar_nacimiento?: string; estado_civil?: string; telefono?: string;
   correo_electronico?: string; departamento?: string; provincia?: string; distrito?: string; direccion_actual?: string;
   observaciones?: string; empresa?: string; cargo?: string; direccion_trabajo?: string; telefono_laboral?: string;
   tipo_sangre?: string; seguro_medico?: string; alergias?: string; enfermedades_relevantes?: string;
-  medicacion_habitual?: string; medico_referencia?: string; banco_principal?: string; tipo_cuenta?: string;
-  observaciones_financieras?: string; contacto_nombre?: string; contacto_relacion?: string; contacto_telefono?: string;
-  fecha_titulo?: string; fecha_importante?: string;
+  medicacion_habitual?: string; medico_referencia?: string;
+  cuentas: Array<{ banco_principal: string; tipo_cuenta: string; observaciones: string }>;
+  contactos: Array<{ nombre: string; relacion: string; telefono: string }>;
+  fechas: Array<{ titulo: string; fecha: string }>;
 };
 
 const navegacion = [
@@ -112,9 +114,6 @@ export default function Home() {
       const partes = p.nombre_completo.split(" ");
       const laboral = p.tb_informacion_laboral?.[0] ?? {};
       const salud = p.tb_salud_perfil?.[0] ?? {};
-      const financiera = p.tb_cuentas_financieras?.[0] ?? {};
-      const contacto = p.tb_contactos_emergencia?.[0] ?? {};
-      const fecha = p.tb_fechas_importantes?.[0] ?? {};
       return {
         id: p.id,
         usuarioId: p.usuario_id,
@@ -124,7 +123,7 @@ export default function Home() {
         edad: p.edad == null ? "Edad sin registrar" : `${p.edad} años`,
         lugar: p.departamento ?? "Perú",
         codigo: p.usuario_id ? "Usuario vinculado" : "Sin acceso",
-        dni: p.dni ?? "", fecha_nacimiento: p.fecha_nacimiento ?? "", lugar_nacimiento: p.lugar_nacimiento ?? "",
+        actualizado_en: p.actualizado_en ?? p.creado_en, dni: p.dni ?? "", fecha_nacimiento: p.fecha_nacimiento ?? "", lugar_nacimiento: p.lugar_nacimiento ?? "",
         estado_civil: p.estado_civil ?? "", telefono: p.telefono ?? "", correo_electronico: p.correo_electronico ?? "",
         departamento: p.departamento ?? "", provincia: p.provincia ?? "", distrito: p.distrito ?? "",
         direccion_actual: p.direccion_actual ?? "", observaciones: p.observaciones ?? "",
@@ -132,10 +131,10 @@ export default function Home() {
         telefono_laboral: laboral.telefono_laboral ?? "", tipo_sangre: salud.tipo_sangre ?? "",
         seguro_medico: salud.seguro_medico ?? "", alergias: salud.alergias ?? "",
         enfermedades_relevantes: salud.enfermedades_relevantes ?? "", medicacion_habitual: salud.medicacion_habitual ?? "",
-        medico_referencia: salud.medico_referencia ?? "", banco_principal: financiera.banco_principal ?? "",
-        tipo_cuenta: financiera.tipo_cuenta ?? "", observaciones_financieras: financiera.observaciones ?? "",
-        contacto_nombre: contacto.nombre ?? "", contacto_relacion: contacto.relacion ?? "",
-        contacto_telefono: contacto.telefono ?? "", fecha_titulo: fecha.titulo ?? "", fecha_importante: fecha.fecha ?? "",
+        medico_referencia: salud.medico_referencia ?? "",
+        cuentas: (p.tb_cuentas_financieras ?? []).map((x: Record<string, string>) => ({ banco_principal: x.banco_principal ?? "", tipo_cuenta: x.tipo_cuenta ?? "", observaciones: x.observaciones ?? "" })),
+        contactos: (p.tb_contactos_emergencia ?? []).map((x: Record<string, string>) => ({ nombre: x.nombre ?? "", relacion: x.relacion ?? "", telefono: x.telefono ?? "" })),
+        fechas: (p.tb_fechas_importantes ?? []).map((x: Record<string, string>) => ({ titulo: x.titulo ?? "", fecha: x.fecha ?? "" })),
       };
     }));
   }
@@ -297,7 +296,7 @@ function VistaIntegrantes({ buscar, setBuscar, personas, onAdd, onOpen, esAdmini
 }) {
   return <>
     <TituloPagina etiqueta="FAMILIA" titulo="Integrantes" descripcion="Perfiles, contactos y datos importantes de cada miembro."
-      onAdd={esAdministrador ? onAdd : undefined} textoBoton="Nuevo integrante" />
+      onAdd={esAdministrador ? onAdd : undefined} textoBoton="Agregar integrante +" />
     <div className="herramientas"><div className="buscador">⌕<input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar por nombre" /></div><button className="secundario">Todos los roles⌄</button></div>
     <section className="grilla-personas">{personas.map((p) => {
       const puedeEditar = esAdministrador || p.usuarioId === usuarioId;
@@ -343,7 +342,7 @@ function ModalNuevoIntegrante({ onClose, onSaved }: { onClose: () => void; onSav
     <div className="modal-cabecera"><div><div className="etiqueta">NUEVO INTEGRANTE</div><h2>Agregar a la familia</h2></div><button className="boton-icono" onClick={onClose} aria-label="Cerrar">×</button></div>
     <form onSubmit={crear}><div className="campos">
       <label className="ancho"><span>Nombre completo</span><input name="nombre_completo" required autoFocus placeholder="Nombres y apellidos" /></label>
-      <label className="ancho"><span>Parentesco contigo</span><input name="parentesco" required placeholder="Ej. hijo, madre, esposo, prima" /></label>
+      <label className="ancho"><span>Parentesco contigo</span><select name="parentesco" required defaultValue=""><option value="" disabled>Selecciona una relación</option>{RELACIONES.map((r) => <option key={r}>{r}</option>)}</select></label>
     </div>{error && <p className="error">{error}</p>}<div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>Cancelar</button><button className="primario">Crear integrante</button></div></form>
   </section></div>;
 }
@@ -352,19 +351,25 @@ const seccionesFicha = [
   ["Datos personales", [["nombre", "Nombre completo"], ["dni", "DNI"], ["fecha_nacimiento", "Fecha de nacimiento", "date"], ["lugar_nacimiento", "Lugar de nacimiento"], ["estado_civil", "Estado civil"], ["telefono", "Teléfono"], ["correo_electronico", "Correo electrónico", "email"], ["departamento", "Departamento"], ["provincia", "Provincia"], ["distrito", "Distrito"], ["direccion_actual", "Dirección actual"]]],
   ["Información laboral", [["empresa", "Empresa"], ["cargo", "Cargo"], ["direccion_trabajo", "Dirección de trabajo"], ["telefono_laboral", "Teléfono laboral"]]],
   ["Salud", [["tipo_sangre", "Tipo de sangre"], ["seguro_medico", "Seguro médico"], ["alergias", "Alergias"], ["enfermedades_relevantes", "Enfermedades relevantes"], ["medicacion_habitual", "Medicación habitual"], ["medico_referencia", "Médico de referencia"]]],
-  ["Información financiera", [["banco_principal", "Banco principal"], ["tipo_cuenta", "Tipo de cuenta"], ["observaciones_financieras", "Observaciones"]]],
-  ["Contacto de emergencia", [["contacto_nombre", "Nombre"], ["contacto_relacion", "Relación"], ["contacto_telefono", "Teléfono"]]],
-  ["Fechas importantes", [["fecha_titulo", "Descripción"], ["fecha_importante", "Fecha", "date"]]],
   ["Observaciones generales", [["observaciones", "Observaciones generales"]]],
 ] as const;
 
+const RELACIONES = ["Madre", "Padre", "Hija", "Hijo", "Hermana", "Hermano", "Esposa", "Esposo", "Pareja", "Abuela", "Abuelo", "Nieta", "Nieto", "Tía", "Tío", "Prima", "Primo", "Sobrina", "Sobrino", "Tutora", "Tutor", "Amiga", "Amigo", "Otro"];
+
+function fechaActualizacion(valor?: string) {
+  return valor ? new Intl.DateTimeFormat("es-PE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(valor)) : "Sin actualización";
+}
+
 function ModalFicha({ integrante, puedeEditar, onClose, onSaved }: { integrante: Integrante; puedeEditar: boolean; onClose: () => void; onSaved: () => void }) {
   const [error, setError] = useState("");
+  const [contactos, setContactos] = useState(integrante.contactos.length ? integrante.contactos : [{ nombre: "", relacion: "", telefono: "" }]);
+  const [fechasImportantes, setFechasImportantes] = useState(integrante.fechas.length ? integrante.fechas : [{ titulo: "", fecha: "" }]);
+  const [cuentas, setCuentas] = useState(integrante.cuentas.length ? integrante.cuentas : [{ banco_principal: "", tipo_cuenta: "", observaciones: "" }]);
   async function guardarFicha(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!puedeEditar) return;
     const valores = Object.fromEntries(new FormData(e.currentTarget));
-    const respuesta = await fetch("/api/datos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: integrante.id, ...valores }) });
+    const respuesta = await fetch("/api/datos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: integrante.id, ...valores, contactos, fechas: fechasImportantes, cuentas }) });
     const json = await respuesta.json();
     if (!respuesta.ok) return setError(json.error ?? "No se pudo guardar la ficha");
     onSaved();
@@ -372,9 +377,23 @@ function ModalFicha({ integrante, puedeEditar, onClose, onSaved }: { integrante:
   return <div className="velo" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="modal modal-ficha" role="dialog" aria-modal="true" aria-label={`Ficha de ${integrante.nombre}`}>
     <div className="modal-cabecera"><div><div className="etiqueta">{puedeEditar ? "FICHA EDITABLE" : "SOLO LECTURA"}</div><h2>{integrante.nombre}</h2><p>{integrante.edad} · {integrante.lugar}</p></div><button className="boton-icono" onClick={onClose} aria-label="Cerrar">×</button></div>
     <form onSubmit={guardarFicha}>{seccionesFicha.map(([titulo, campos]) => <fieldset key={titulo}><legend>{titulo}</legend><div className="campos">{campos.map(([nombre, etiqueta, tipo]) =>
-      <label key={nombre}><span>{etiqueta}</span><input name={nombre} type={tipo ?? "text"} defaultValue={String(integrante[nombre as keyof Integrante] ?? "")} disabled={!puedeEditar} /></label>
-    )}</div></fieldset>)}{error && <p className="error">{error}</p>}<div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>{puedeEditar ? "Cancelar" : "Cerrar"}</button>{puedeEditar && <button className="primario">Guardar cambios</button>}</div></form>
+      <label key={nombre}><span>{etiqueta}{nombre === "telefono" && <small>Actualizado: {fechaActualizacion(integrante.actualizado_en)}</small>}</span><input name={nombre} type={tipo ?? "text"} defaultValue={String(integrante[nombre as keyof Integrante] ?? "")} disabled={!puedeEditar} /></label>
+    )}</div></fieldset>)}
+      <ListaEditable titulo="Información financiera" nota="Puedes agregar más de una" actualizado={integrante.actualizado_en} puedeEditar={puedeEditar} onAdd={() => setCuentas([...cuentas, { banco_principal: "", tipo_cuenta: "", observaciones: "" }])}>
+        {cuentas.map((c, i) => <div className="registro-repetible" key={i}><div className="campos"><label><span>Banco principal</span><input value={c.banco_principal} disabled={!puedeEditar} onChange={(e) => setCuentas(cuentas.map((x, n) => n === i ? { ...x, banco_principal: e.target.value } : x))} /></label><label><span>Tipo de cuenta</span><input value={c.tipo_cuenta} disabled={!puedeEditar} onChange={(e) => setCuentas(cuentas.map((x, n) => n === i ? { ...x, tipo_cuenta: e.target.value } : x))} /></label><label className="ancho"><span>Observaciones</span><input value={c.observaciones} disabled={!puedeEditar} onChange={(e) => setCuentas(cuentas.map((x, n) => n === i ? { ...x, observaciones: e.target.value } : x))} /></label></div>{puedeEditar && cuentas.length > 1 && <button type="button" className="quitar" onClick={() => setCuentas(cuentas.filter((_, n) => n !== i))}>Eliminar</button>}</div>)}
+      </ListaEditable>
+      <ListaEditable titulo="Contactos de emergencia" nota="Puedes agregar más de uno" actualizado={integrante.actualizado_en} puedeEditar={puedeEditar} onAdd={() => setContactos([...contactos, { nombre: "", relacion: "", telefono: "" }])}>
+        {contactos.map((c, i) => <div className="registro-repetible" key={i}><div className="campos tres"><label><span>Nombre</span><input value={c.nombre} disabled={!puedeEditar} onChange={(e) => setContactos(contactos.map((x, n) => n === i ? { ...x, nombre: e.target.value } : x))} /></label><label><span>Relación</span><select value={c.relacion} disabled={!puedeEditar} onChange={(e) => setContactos(contactos.map((x, n) => n === i ? { ...x, relacion: e.target.value } : x))}><option value="">Selecciona</option>{RELACIONES.map((r) => <option key={r}>{r}</option>)}</select></label><label><span>Teléfono</span><input value={c.telefono} disabled={!puedeEditar} onChange={(e) => setContactos(contactos.map((x, n) => n === i ? { ...x, telefono: e.target.value } : x))} /></label></div>{puedeEditar && contactos.length > 1 && <button type="button" className="quitar" onClick={() => setContactos(contactos.filter((_, n) => n !== i))}>Eliminar</button>}</div>)}
+      </ListaEditable>
+      <ListaEditable titulo="Fechas importantes" nota="Puedes agregar más de una" actualizado={integrante.actualizado_en} puedeEditar={puedeEditar} onAdd={() => setFechasImportantes([...fechasImportantes, { titulo: "", fecha: "" }])}>
+        {fechasImportantes.map((f, i) => <div className="registro-repetible" key={i}><div className="campos"><label><span>Descripción</span><input value={f.titulo} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, titulo: e.target.value } : x))} /></label><label><span>Fecha</span><input type="date" value={f.fecha} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, fecha: e.target.value } : x))} /></label></div>{puedeEditar && fechasImportantes.length > 1 && <button type="button" className="quitar" onClick={() => setFechasImportantes(fechasImportantes.filter((_, n) => n !== i))}>Eliminar</button>}</div>)}
+      </ListaEditable>
+      {error && <p className="error">{error}</p>}<div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>{puedeEditar ? "Cancelar" : "Cerrar"}</button>{puedeEditar && <button className="primario">Guardar cambios</button>}</div></form>
   </section></div>;
+}
+
+function ListaEditable({ titulo, nota, actualizado, puedeEditar, onAdd, children }: { titulo: string; nota: string; actualizado?: string; puedeEditar: boolean; onAdd: () => void; children: React.ReactNode }) {
+  return <fieldset><legend>{titulo}</legend><div className="subtitulo-lista"><small>{nota} · Actualizado: {fechaActualizacion(actualizado)}</small>{puedeEditar && <button type="button" className="secundario" onClick={onAdd}>＋ Agregar</button>}</div>{children}</fieldset>;
 }
 
 function Modal({ titulo, seccion, onClose, onSave }: { titulo: string; seccion: string; onClose: () => void; onSave: (e: FormEvent<HTMLFormElement>) => void }) {
