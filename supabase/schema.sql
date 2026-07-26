@@ -68,7 +68,8 @@ create table tb_fechas_importantes (
 
 create table tb_cuentas_financieras (
   id uuid primary key default gen_random_uuid(), integrante_id uuid not null references tb_integrantes(id) on delete cascade,
-  banco_principal text, tipo_cuenta text, observaciones text
+  banco_principal text, tipo_cuenta text, observaciones text,
+  unique(integrante_id)
 );
 create table tb_movimientos_financieros (
   id uuid primary key default gen_random_uuid(), integrante_id uuid references tb_integrantes(id), tipo varchar(10) check(tipo in ('ingreso','gasto')),

@@ -3,6 +3,16 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Registro = { titulo: string; detalle: string; meta: string; estado?: string };
+type Integrante = {
+  id: string; usuarioId: string | null; iniciales: string; nombre: string; rol: string; edad: string; lugar: string; codigo: string;
+  dni?: string; fecha_nacimiento?: string; lugar_nacimiento?: string; estado_civil?: string; telefono?: string;
+  correo_electronico?: string; departamento?: string; provincia?: string; distrito?: string; direccion_actual?: string;
+  observaciones?: string; empresa?: string; cargo?: string; direccion_trabajo?: string; telefono_laboral?: string;
+  tipo_sangre?: string; seguro_medico?: string; alergias?: string; enfermedades_relevantes?: string;
+  medicacion_habitual?: string; medico_referencia?: string; banco_principal?: string; tipo_cuenta?: string;
+  observaciones_financieras?: string; contacto_nombre?: string; contacto_relacion?: string; contacto_telefono?: string;
+  fecha_titulo?: string; fecha_importante?: string;
+};
 
 const navegacion = [
   ["Inicio", "⌂"], ["Integrantes", "◎"], ["Salud", "♡"], ["Finanzas", "▥"],
@@ -10,14 +20,7 @@ const navegacion = [
   ["Mascotas", "♧"], ["Archivos históricos", "□"],
 ];
 
-const integrantes = [
-  { iniciales: "RA", nombre: "Rosa Elena Alania Quispe", rol: "Administradora", edad: "68 años", lugar: "Lima", codigo: "•••• 1024" },
-  { iniciales: "CA", nombre: "Carlos Alberto Alania Soto", rol: "Integrante", edad: "70 años", lugar: "Lima", codigo: "•••• 2086" },
-  { iniciales: "MA", nombre: "María Fernanda Alania", rol: "Integrante", edad: "42 años", lugar: "Arequipa", codigo: "•••• 3142" },
-  { iniciales: "JA", nombre: "Jorge Luis Alania", rol: "Integrante", edad: "39 años", lugar: "Cusco", codigo: "•••• 4098" },
-  { iniciales: "LA", nombre: "Lucía Alania Vargas", rol: "Integrante", edad: "16 años", lugar: "Lima", codigo: "•••• 5184" },
-  { iniciales: "DA", nombre: "Diego Alania Vargas", rol: "Integrante", edad: "12 años", lugar: "Lima", codigo: "•••• 6210" },
-];
+const integrantes: Integrante[] = [];
 
 const datos: Record<string, Registro[]> = {
   Salud: [
@@ -94,23 +97,45 @@ export default function Home() {
   const [buscar, setBuscar] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
-  const [integrantesBd, setIntegrantesBd] = useState<typeof integrantes>([]);
+  const [integrantesBd, setIntegrantesBd] = useState<Integrante[]>([]);
+  const [usuarioId, setUsuarioId] = useState("");
+  const [rolSesion, setRolSesion] = useState<"administrador" | "integrante">("integrante");
+  const [ficha, setFicha] = useState<Integrante | null>(null);
 
   async function cargarDatos() {
     const respuesta = await fetch("/api/datos");
     if (!respuesta.ok) return;
     const json = await respuesta.json();
-    setIntegrantesBd((json.integrantes ?? []).map((p: {
-      nombre_completo: string; edad: number | null; departamento: string | null; usuario_id: string | null;
-    }) => {
+    setUsuarioId(json.usuarioId);
+    setRolSesion(json.rol);
+    setIntegrantesBd((json.integrantes ?? []).map((p: Record<string, any>) => {
       const partes = p.nombre_completo.split(" ");
+      const laboral = p.tb_informacion_laboral?.[0] ?? {};
+      const salud = p.tb_salud_perfil?.[0] ?? {};
+      const financiera = p.tb_cuentas_financieras?.[0] ?? {};
+      const contacto = p.tb_contactos_emergencia?.[0] ?? {};
+      const fecha = p.tb_fechas_importantes?.[0] ?? {};
       return {
+        id: p.id,
+        usuarioId: p.usuario_id,
         iniciales: `${partes[0]?.[0] ?? ""}${partes[1]?.[0] ?? ""}`.toUpperCase(),
         nombre: p.nombre_completo,
-        rol: p.usuario_id ? "Integrante" : "Familiar",
+        rol: p.usuario_id === json.usuarioId ? "Tu perfil" : p.usuario_id ? "Integrante" : "Familiar",
         edad: p.edad == null ? "Edad sin registrar" : `${p.edad} años`,
         lugar: p.departamento ?? "Perú",
         codigo: p.usuario_id ? "Usuario vinculado" : "Sin acceso",
+        dni: p.dni ?? "", fecha_nacimiento: p.fecha_nacimiento ?? "", lugar_nacimiento: p.lugar_nacimiento ?? "",
+        estado_civil: p.estado_civil ?? "", telefono: p.telefono ?? "", correo_electronico: p.correo_electronico ?? "",
+        departamento: p.departamento ?? "", provincia: p.provincia ?? "", distrito: p.distrito ?? "",
+        direccion_actual: p.direccion_actual ?? "", observaciones: p.observaciones ?? "",
+        empresa: laboral.empresa ?? "", cargo: laboral.cargo ?? "", direccion_trabajo: laboral.direccion_trabajo ?? "",
+        telefono_laboral: laboral.telefono_laboral ?? "", tipo_sangre: salud.tipo_sangre ?? "",
+        seguro_medico: salud.seguro_medico ?? "", alergias: salud.alergias ?? "",
+        enfermedades_relevantes: salud.enfermedades_relevantes ?? "", medicacion_habitual: salud.medicacion_habitual ?? "",
+        medico_referencia: salud.medico_referencia ?? "", banco_principal: financiera.banco_principal ?? "",
+        tipo_cuenta: financiera.tipo_cuenta ?? "", observaciones_financieras: financiera.observaciones ?? "",
+        contacto_nombre: contacto.nombre ?? "", contacto_relacion: contacto.relacion ?? "",
+        contacto_telefono: contacto.telefono ?? "", fecha_titulo: fecha.titulo ?? "", fecha_importante: fecha.fecha ?? "",
       };
     }));
   }
@@ -124,7 +149,7 @@ export default function Home() {
     }).catch(() => undefined);
   }, []);
 
-  const integrantesVisibles = integrantesBd.length ? integrantesBd : integrantes;
+  const integrantesVisibles = integrantesBd;
 
   const personasFiltradas = useMemo(
     () => integrantesVisibles.filter((p) => p.nombre.toLowerCase().includes(buscar.toLowerCase())),
@@ -156,6 +181,7 @@ export default function Home() {
     await fetch("/api/sesion", { method: "DELETE" });
     setSesion(false);
     setIntegrantesBd([]);
+    setUsuarioId("");
   }
 
   function guardar(e: FormEvent<HTMLFormElement>) {
@@ -211,7 +237,9 @@ export default function Home() {
           <div className="aviso-demo"><span>DATOS DE DEMOSTRACIÓN</span><p>Explora libremente. La información mostrada es ficticia y sirve para evaluar el diseño.</p></div>
           {seccion === "Inicio" ? <Inicio personas={integrantesVisibles} onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")} /> :
             seccion === "Integrantes" ? (
-              <VistaIntegrantes buscar={buscar} setBuscar={setBuscar} personas={personasFiltradas} onAdd={() => setModal("Nuevo integrante")} />
+              <VistaIntegrantes buscar={buscar} setBuscar={setBuscar} personas={personasFiltradas}
+                esAdministrador={rolSesion === "administrador"} usuarioId={usuarioId}
+                onAdd={() => setModal("Nuevo integrante")} onOpen={setFicha} />
             ) : (
               <VistaModulo titulo={seccion} registros={datos[seccion] ?? []} onAdd={() => setModal(`Nuevo registro · ${seccion}`)} />
             )}
@@ -219,7 +247,14 @@ export default function Home() {
       </main>
 
       {aviso && <div className="toast" role="status">✓ {aviso}</div>}
-      {modal && <Modal titulo={modal} seccion={seccion} onClose={() => setModal(null)} onSave={guardar} />}
+      {modal === "Nuevo integrante" && <ModalNuevoIntegrante onClose={() => setModal(null)} onSaved={async () => {
+        setModal(null); await cargarDatos(); setAviso("Integrante creado correctamente"); window.setTimeout(() => setAviso(""), 2600);
+      }} />}
+      {modal && modal !== "Nuevo integrante" && <Modal titulo={modal} seccion={seccion} onClose={() => setModal(null)} onSave={guardar} />}
+      {ficha && <ModalFicha integrante={ficha} puedeEditar={rolSesion === "administrador" || ficha.usuarioId === usuarioId}
+        onClose={() => setFicha(null)} onSaved={async () => {
+          setFicha(null); await cargarDatos(); setAviso("Ficha actualizada correctamente"); window.setTimeout(() => setAviso(""), 2600);
+        }} />}
     </div>
   );
 }
@@ -256,11 +291,18 @@ function Inicio({ personas, onNavigate, onAdd }: { personas: typeof integrantes;
   </>;
 }
 
-function VistaIntegrantes({ buscar, setBuscar, personas, onAdd }: { buscar: string; setBuscar: (s: string) => void; personas: typeof integrantes; onAdd: () => void }) {
+function VistaIntegrantes({ buscar, setBuscar, personas, onAdd, onOpen, esAdministrador, usuarioId }: {
+  buscar: string; setBuscar: (s: string) => void; personas: Integrante[]; onAdd: () => void;
+  onOpen: (p: Integrante) => void; esAdministrador: boolean; usuarioId: string;
+}) {
   return <>
-    <TituloPagina etiqueta="FAMILIA" titulo="Integrantes" descripcion="Perfiles, contactos y datos importantes de cada miembro." onAdd={onAdd} textoBoton="Nuevo integrante" />
+    <TituloPagina etiqueta="FAMILIA" titulo="Integrantes" descripcion="Perfiles, contactos y datos importantes de cada miembro."
+      onAdd={esAdministrador ? onAdd : undefined} textoBoton="Nuevo integrante" />
     <div className="herramientas"><div className="buscador">⌕<input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar por nombre" /></div><button className="secundario">Todos los roles⌄</button></div>
-    <section className="grilla-personas">{personas.map((p, i) => <article className="tarjeta ficha" key={p.nombre}><div className="ficha-arriba"><span className="avatar grande">{p.iniciales}</span><span className="insignia">{p.rol}</span></div><h2>{p.nombre}</h2><p>{p.edad} · {p.lugar}</p><dl><div><dt>Código</dt><dd>{p.codigo}</dd></div><div><dt>Estado</dt><dd>Activo</dd></div></dl><div className="ficha-acciones"><button className="secundario">Ver ficha</button><button className="boton-icono" aria-label="Más opciones">•••</button></div>{i === 0 && <span className="propio">Tu perfil · Puedes editar</span>}</article>)}</section>
+    <section className="grilla-personas">{personas.map((p) => {
+      const puedeEditar = esAdministrador || p.usuarioId === usuarioId;
+      return <article className="tarjeta ficha" key={p.id}><div className="ficha-arriba"><span className="avatar grande">{p.iniciales}</span><span className="insignia">{p.rol}</span></div><h2>{p.nombre}</h2><p>{p.edad} · {p.lugar}</p><dl><div><dt>Código</dt><dd>{p.codigo}</dd></div><div><dt>Estado</dt><dd>Activo</dd></div></dl><div className="ficha-acciones"><button className="secundario" onClick={() => onOpen(p)}>{puedeEditar ? "Ver y editar ficha" : "Ver ficha"}</button></div>{p.usuarioId === usuarioId && <span className="propio">Tu perfil · Puedes editar</span>}</article>;
+    })}</section>
   </>;
 }
 
@@ -283,8 +325,56 @@ function VistaModulo({ titulo, registros, onAdd }: { titulo: string; registros: 
   </>;
 }
 
-function TituloPagina({ etiqueta, titulo, descripcion, onAdd, textoBoton }: { etiqueta: string; titulo: string; descripcion: string; onAdd: () => void; textoBoton: string }) {
-  return <section className="titulo-pagina"><div><div className="etiqueta">{etiqueta}</div><h1>{titulo}</h1><p>{descripcion}</p></div><button className="primario" onClick={onAdd}>＋ {textoBoton}</button></section>;
+function TituloPagina({ etiqueta, titulo, descripcion, onAdd, textoBoton }: { etiqueta: string; titulo: string; descripcion: string; onAdd?: () => void; textoBoton: string }) {
+  return <section className="titulo-pagina"><div><div className="etiqueta">{etiqueta}</div><h1>{titulo}</h1><p>{descripcion}</p></div>{onAdd && <button className="primario" onClick={onAdd}>＋ {textoBoton}</button>}</section>;
+}
+
+function ModalNuevoIntegrante({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [error, setError] = useState("");
+  async function crear(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const valores = Object.fromEntries(new FormData(e.currentTarget));
+    const respuesta = await fetch("/api/datos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(valores) });
+    const json = await respuesta.json();
+    if (!respuesta.ok) return setError(json.error ?? "No se pudo crear el integrante");
+    onSaved();
+  }
+  return <div className="velo" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="modal modal-corta" role="dialog" aria-modal="true" aria-label="Nuevo integrante">
+    <div className="modal-cabecera"><div><div className="etiqueta">NUEVO INTEGRANTE</div><h2>Agregar a la familia</h2></div><button className="boton-icono" onClick={onClose} aria-label="Cerrar">×</button></div>
+    <form onSubmit={crear}><div className="campos">
+      <label className="ancho"><span>Nombre completo</span><input name="nombre_completo" required autoFocus placeholder="Nombres y apellidos" /></label>
+      <label className="ancho"><span>Parentesco contigo</span><input name="parentesco" required placeholder="Ej. hijo, madre, esposo, prima" /></label>
+    </div>{error && <p className="error">{error}</p>}<div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>Cancelar</button><button className="primario">Crear integrante</button></div></form>
+  </section></div>;
+}
+
+const seccionesFicha = [
+  ["Datos personales", [["nombre", "Nombre completo"], ["dni", "DNI"], ["fecha_nacimiento", "Fecha de nacimiento", "date"], ["lugar_nacimiento", "Lugar de nacimiento"], ["estado_civil", "Estado civil"], ["telefono", "Teléfono"], ["correo_electronico", "Correo electrónico", "email"], ["departamento", "Departamento"], ["provincia", "Provincia"], ["distrito", "Distrito"], ["direccion_actual", "Dirección actual"]]],
+  ["Información laboral", [["empresa", "Empresa"], ["cargo", "Cargo"], ["direccion_trabajo", "Dirección de trabajo"], ["telefono_laboral", "Teléfono laboral"]]],
+  ["Salud", [["tipo_sangre", "Tipo de sangre"], ["seguro_medico", "Seguro médico"], ["alergias", "Alergias"], ["enfermedades_relevantes", "Enfermedades relevantes"], ["medicacion_habitual", "Medicación habitual"], ["medico_referencia", "Médico de referencia"]]],
+  ["Información financiera", [["banco_principal", "Banco principal"], ["tipo_cuenta", "Tipo de cuenta"], ["observaciones_financieras", "Observaciones"]]],
+  ["Contacto de emergencia", [["contacto_nombre", "Nombre"], ["contacto_relacion", "Relación"], ["contacto_telefono", "Teléfono"]]],
+  ["Fechas importantes", [["fecha_titulo", "Descripción"], ["fecha_importante", "Fecha", "date"]]],
+  ["Observaciones generales", [["observaciones", "Observaciones generales"]]],
+] as const;
+
+function ModalFicha({ integrante, puedeEditar, onClose, onSaved }: { integrante: Integrante; puedeEditar: boolean; onClose: () => void; onSaved: () => void }) {
+  const [error, setError] = useState("");
+  async function guardarFicha(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!puedeEditar) return;
+    const valores = Object.fromEntries(new FormData(e.currentTarget));
+    const respuesta = await fetch("/api/datos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: integrante.id, ...valores }) });
+    const json = await respuesta.json();
+    if (!respuesta.ok) return setError(json.error ?? "No se pudo guardar la ficha");
+    onSaved();
+  }
+  return <div className="velo" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><section className="modal modal-ficha" role="dialog" aria-modal="true" aria-label={`Ficha de ${integrante.nombre}`}>
+    <div className="modal-cabecera"><div><div className="etiqueta">{puedeEditar ? "FICHA EDITABLE" : "SOLO LECTURA"}</div><h2>{integrante.nombre}</h2><p>{integrante.edad} · {integrante.lugar}</p></div><button className="boton-icono" onClick={onClose} aria-label="Cerrar">×</button></div>
+    <form onSubmit={guardarFicha}>{seccionesFicha.map(([titulo, campos]) => <fieldset key={titulo}><legend>{titulo}</legend><div className="campos">{campos.map(([nombre, etiqueta, tipo]) =>
+      <label key={nombre}><span>{etiqueta}</span><input name={nombre} type={tipo ?? "text"} defaultValue={String(integrante[nombre as keyof Integrante] ?? "")} disabled={!puedeEditar} /></label>
+    )}</div></fieldset>)}{error && <p className="error">{error}</p>}<div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>{puedeEditar ? "Cancelar" : "Cerrar"}</button>{puedeEditar && <button className="primario">Guardar cambios</button>}</div></form>
+  </section></div>;
 }
 
 function Modal({ titulo, seccion, onClose, onSave }: { titulo: string; seccion: string; onClose: () => void; onSave: (e: FormEvent<HTMLFormElement>) => void }) {
