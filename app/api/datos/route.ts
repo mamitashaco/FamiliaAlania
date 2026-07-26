@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   const cuerpo = await request.json();
   const nombre = String(cuerpo.nombre_completo ?? "").trim();
   const parentesco = String(cuerpo.parentesco ?? "").trim();
-  if (!nombre || !parentesco) {
+  if (!nombre || (sesion.rol !== "administrador" && !parentesco)) {
     return NextResponse.json({ error: "Nombre completo y parentesco son obligatorios" }, { status: 400 });
   }
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const { data: creador } = await supabase.from("tb_integrantes").select("nombre_completo").eq("usuario_id", sesion.usuarioId).maybeSingle();
   const { data, error } = await supabase
     .from("tb_integrantes")
-    .insert({ nombre_completo: nombre, observaciones: `Parentesco con ${creador?.nombre_completo ?? "usuario"}: ${parentesco}` })
+    .insert({ nombre_completo: nombre, observaciones: parentesco ? `Parentesco con ${creador?.nombre_completo ?? "usuario"}: ${parentesco}` : null })
     .select("id")
     .single();
 
