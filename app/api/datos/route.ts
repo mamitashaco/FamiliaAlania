@@ -88,7 +88,7 @@ export async function PATCH(request: NextRequest) {
   }
   const { data: integrante } = await supabase
     .from("tb_integrantes")
-    .select("usuario_id")
+    .select("usuario_id,observaciones")
     .eq("id", id)
     .single();
   const puedeEditar = sesion.rol === "administrador" || integrante?.usuario_id === sesion.usuarioId;
@@ -106,7 +106,7 @@ export async function PATCH(request: NextRequest) {
     provincia: cuerpo.provincia || null,
     distrito: cuerpo.distrito || null,
     direccion_actual: cuerpo.direccion_actual || null,
-    observaciones: cuerpo.observaciones || null,
+    observaciones: `${integrante?.observaciones?.includes("[ASISTENCIA]") ? "[ASISTENCIA] " : ""}${cuerpo.observaciones || ""}`.trim() || null,
     actualizado_en: new Date().toISOString(),
   };
   const { error: errorPersonal } = await supabase.from("tb_integrantes").update(personales).eq("id", id);

@@ -11,16 +11,16 @@ function sesionAdministrador(request: NextRequest) {
 export async function GET(request: NextRequest) {
   if (!sesionAdministrador(request)) return NextResponse.json({ error: "Acceso exclusivo del administrador" }, { status: 403 });
   const supabase = supabaseServidor();
-  const { data: integrantes, error } = await supabase.from("tb_integrantes").select("id,usuario_id,nombre_completo").order("nombre_completo");
+  const { data: integrantes, error } = await supabase.from("tb_integrantes").select("id,usuario_id,nombre_completo,observaciones").order("nombre_completo");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const { data: usuarios } = await supabase.from("tb_usuarios").select("id,codigo,activo,rol");
   const porId = new Map((usuarios ?? []).map((u) => [u.id, u]));
-  return NextResponse.json({ integrantes: integrantes?.map((i) => ({ ...i, codigo: i.usuario_id ? porId.get(i.usuario_id)?.codigo?.trim() ?? "" : "", activo: i.usuario_id ? porId.get(i.usuario_id)?.activo : false })) });
+  return NextResponse.json({ integrantes: integrantes?.map((i) => ({ ...i, requiere_asistencia: i.observaciones?.includes("[ASISTENCIA]") ?? false, codigo: i.usuario_id ? porId.get(i.usuario_id)?.codigo?.trim() ?? "" : "", activo: i.usuario_id ? porId.get(i.usuario_id)?.activo : false })) });
 }
 
 export async function PATCH(request: NextRequest) {
   if (!sesionAdministrador(request)) return NextResponse.json({ error: "Acceso exclusivo del administrador" }, { status: 403 });
-  const { id, nombre_completo, codigo, rol, restablecer } = await request.json();
+  const { id, nombre_completo, codigo, rol, restablecer, requiere_asistencia } = await request.json();
   const nombre = String(nombre_completo ?? "").trim();
   const nuevoCodigo = String(codigo ?? "").trim();
   if (!id || !nombre) return NextResponse.json({ error: "El nombre completo es obligatorio" }, { status: 400 });
@@ -28,10 +28,13 @@ export async function PATCH(request: NextRequest) {
   if (rol && !["administrador", "integrante"].includes(rol)) return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
 
   const supabase = supabaseServidor();
-  const { data: integrante, error: errorIntegrante } = await supabase.from("tb_integrantes").update({ nombre_completo: nombre, actualizado_en: new Date().toISOString() }).eq("id", id).select("usuario_id").single();
+  const { data: integrantePrevio } = await supabase.from("tb_integrantes").select("observaciones").eq("id", id).single();
+  const observacionesLimpias = String(integrantePrevio?.observaciones ?? "").replace(/\s*\[ASISTENCIA\]\s*/g, " ").trim();
+  const observaciones = requiere_asistencia ? `[ASISTENCIA]${observacionesLimpias ? ` ${observacionesLimpias}` : ""}` : observacionesLimpias || null;
+  const { data: integrante, error: errorIntegrante } = await supabase.from("tb_integrantes").update({ nombre_completo: nombre, observaciones, actualizado_en: new Date().toISOString() }).eq("id", id).select("usuario_id").single();
   if (errorIntegrante) return NextResponse.json({ error: errorIntegrante.message }, { status: 500 });
   if (!integrante.usuario_id) {
-    if (!nuevoCodigo) return NextResponse.json({ error: "Ingresa un código de 8 dígitos para crear el acceso" }, { status: 400 });
+    if (!nuevoCodigo) return NextResponse.json({ guardado: true });
     const claveHash = (await bcrypt.hash(nuevoCodigo, 10)).replace(/^\$2b\$/, "$2a$");
     const { data: nuevoUsuario, error: errorUsuario } = await supabase.from("tb_usuarios").insert({
       codigo: nuevoCodigo, clave_hash: claveHash, rol: rol ?? "integrante", debe_cambiar_clave: true,

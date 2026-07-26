@@ -114,7 +114,7 @@ export default function Home() {
         actualizado_en: p.actualizado_en ?? p.creado_en, dni: p.dni ?? "", fecha_nacimiento: p.fecha_nacimiento ?? "", lugar_nacimiento: p.lugar_nacimiento ?? "",
         estado_civil: p.estado_civil ?? "", telefono: p.telefono ?? "", correo_electronico: p.correo_electronico ?? "",
         departamento: p.departamento ?? "", provincia: p.provincia ?? "", distrito: p.distrito ?? "",
-        direccion_actual: p.direccion_actual ?? "", observaciones: p.observaciones ?? "",
+        direccion_actual: p.direccion_actual ?? "", observaciones: String(p.observaciones ?? "").replace(/\s*\[ASISTENCIA\]\s*/g, " ").trim(),
         empresa: laboral.empresa ?? "", cargo: laboral.cargo ?? "", direccion_trabajo: laboral.direccion_trabajo ?? "",
         telefono_laboral: laboral.telefono_laboral ?? "", tipo_sangre: salud.tipo_sangre ?? "",
         seguro_medico: salud.seguro_medico ?? "", alergias: salud.alergias ?? "",
@@ -211,7 +211,7 @@ export default function Home() {
         <header className="barra">
           <div className="marca-nav" title="Familia Alania">FA</div>
           <nav className="nav-superior" aria-label="Navegación principal">
-            {[...navegacion, ...(rolSesion === "administrador" ? [["Configuración", "⚙"]] : [])].map(([nombre]) => (
+            {navegacion.map(([nombre]) => (
               <button key={nombre} className={seccion === nombre ? "activo" : ""} onClick={() => setSeccion(nombre)}>
                 {nombre}{nombre === "Salud" && <b>2</b>}
               </button>
@@ -296,9 +296,9 @@ function VistaIntegrantes({ buscar, setBuscar, personas, onAdd, onOpen, esAdmini
 }
 
 const CAMPOS_SALUD: Record<string, Array<[string, string, string?]>> = {
-  historial: [["fecha", "Fecha", "date"], ["tipo", "Tipo de atención", "sugerencia"], ["diagnostico", "Diagnóstico", "textarea"], ["tratamiento", "Tratamiento", "textarea"], ["profesional", "Profesional"], ["establecimiento", "Establecimiento"], ["observaciones", "Observaciones", "textarea"]],
-  medicamentos: [["nombre", "Medicamento"], ["dosis", "Dosis"], ["frecuencia", "Frecuencia (ej. cada 8 horas)"], ["fecha_inicio", "Fecha de inicio", "date"], ["duracion_dias", "Duración (días)", "number"], ["fecha_fin", "Fecha de fin calculada o manual", "date"], ["indicaciones", "Indicaciones", "textarea"]],
-  vacunas: [["nombre", "Vacuna"], ["dosis", "Dosis"], ["fecha_aplicacion", "Fecha de aplicación", "date"], ["proxima_fecha", "Próxima dosis (opcional)", "date"], ["proxima_cantidad", "O calcular dentro de", "number"], ["proxima_unidad", "Unidad", "unidad"], ["establecimiento", "Establecimiento"], ["lote", "Lote"]],
+  historial: [["fecha", "Fecha", "date"], ["establecimiento", "Establecimiento"], ["tipo", "Tipo de atención", "sugerencia"], ["profesional", "Profesional"], ["diagnostico", "Diagnóstico"], ["tratamiento", "Tratamiento", "textarea"], ["observaciones", "Observaciones", "textarea"]],
+  medicamentos: [["nombre", "Medicamento"], ["dosis", "Dosis"], ["frecuencia_horas", "Frecuencia en horas", "number"], ["repeticiones", "Veces que se repite", "number"], ["duracion_dias", "O duración en días", "number"], ["fecha_inicio", "Fecha de inicio", "date"], ["fecha_fin", "Fecha de fin calculada o manual", "date"], ["indicaciones", "Indicaciones", "textarea"]],
+  vacunas: [["nombre", "Vacuna"], ["dosis", "Dosis"], ["establecimiento", "Establecimiento"], ["lote", "Lote"], ["fecha_aplicacion", "Fecha de aplicación", "date"], ["proxima_fecha", "Próxima dosis (opcional)", "date"], ["proxima_cantidad", "Dentro de", "number"], ["proxima_unidad", "Unidad", "unidad"]],
   examenes: [["nombre", "Examen"], ["fecha", "Fecha", "date"], ["resultado_resumen", "Resultado", "textarea"], ["proximo_control", "Próximo control (opcional)", "date"]],
   signos: [["registrado_en", "Fecha", "date"], ["peso_kg", "Peso (kg)", "number"], ["talla_cm", "Talla (cm)", "number"], ["presion_arterial", "Presión arterial"], ["temperatura", "Temperatura", "number"], ["glucosa", "Glucosa", "number"], ["saturacion", "Saturación", "number"], ["pulso", "Pulso", "number"], ["observaciones", "Observaciones", "textarea"]],
 };
@@ -312,6 +312,7 @@ function VistaSalud() {
   const [pestana, setPestana] = useState("perfil");
   const [avisoSalud, setAvisoSalud] = useState("");
   const [formularioAbierto, setFormularioAbierto] = useState(false);
+  const [medicamentosTratamiento, setMedicamentosTratamiento] = useState([{ nombre: "", dosis: "", frecuencia: "", indicaciones: "" }]);
   async function cargarSalud() {
     const respuesta = await fetch("/api/salud");
     const json = await respuesta.json();
@@ -321,17 +322,17 @@ function VistaSalud() {
   }
   useEffect(() => { cargarSalud(); }, []);
   const persona = datosSalud.find((x) => x.id === integranteId);
-  const puedeEditar = rolActual === "administrador" || persona?.usuario_id === usuarioActual;
+  const puedeEditar = rolActual === "administrador" || persona?.usuario_id === usuarioActual || persona?.observaciones?.includes("[ASISTENCIA]");
   const perfil = persona?.tb_salud_perfil?.[0] ?? {};
   const registros = pestana === "perfil" ? [] : persona?.[TABLAS_SALUD[pestana]] ?? [];
 
   async function guardarSalud(e: FormEvent<HTMLFormElement>, tipo: string) {
     e.preventDefault();
     const valores = Object.fromEntries(new FormData(e.currentTarget));
-    const respuesta = await fetch("/api/salud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrante_id: integranteId, tipo, ...valores }) });
+    const respuesta = await fetch("/api/salud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrante_id: integranteId, tipo, ...valores, medicamentos: tipo === "historial" ? medicamentosTratamiento : undefined }) });
     const json = await respuesta.json();
     setAvisoSalud(respuesta.ok ? "✓ Guardado" : json.error ?? "No se pudo guardar");
-    if (respuesta.ok) { e.currentTarget.reset(); setFormularioAbierto(false); await cargarSalud(); }
+    if (respuesta.ok) { e.currentTarget.reset(); setMedicamentosTratamiento([{ nombre: "", dosis: "", frecuencia: "", indicaciones: "" }]); setFormularioAbierto(false); await cargarSalud(); }
     window.setTimeout(() => setAvisoSalud(""), 2200);
   }
 
@@ -343,7 +344,7 @@ function VistaSalud() {
       <section className="tarjeta registros-salud"><div className="cabecera-seccion"><div><h2>Registros</h2><p>{registros.length} registros guardados</p></div>{puedeEditar && <button onClick={() => setFormularioAbierto(true)}>＋ Agregar</button>}</div>{registros.length ? registros.map((r: Record<string, any>) => <article key={r.id}><strong>{r.nombre || r.diagnostico || r.tipo || r.presion_arterial || "Registro de salud"}</strong><span>{r.fecha || r.fecha_aplicacion || r.fecha_inicio || (r.registrado_en ? new Date(r.registrado_en).toLocaleDateString("es-PE") : "")}</span><p>{r.resultado_resumen || r.tratamiento || r.indicaciones || r.observaciones || ""}</p></article>) : <div className="estado-vacio"><p>Sin registros todavía.</p></div>}</section>}
     {formularioAbierto && <div className="velo"><section className="modal modal-ficha" role="dialog" aria-modal="true" aria-label={pestana === "perfil" ? "Editar perfil de salud" : "Nuevo registro de salud"}><div className="modal-cabecera"><div><div className="etiqueta">SALUD</div><h2>{pestana === "perfil" ? "Editar perfil de salud" : "Nuevo registro"}</h2></div><button className="boton-icono" onClick={() => setFormularioAbierto(false)} aria-label="Cerrar">×</button></div>
       {pestana === "perfil" ? <form className="formulario-salud" onSubmit={(e) => guardarSalud(e, "perfil")}><div className="campos"><label><span>Tipo de sangre</span><select name="tipo_sangre" defaultValue={perfil.tipo_sangre ?? ""}><option value="">Selecciona</option>{["O+","O-","A+","A-","B+","B-","AB+","AB-","No conoce"].map((x) => <option key={x}>{x}</option>)}</select></label>{[["seguro_medico", "Seguro médico"], ["alergias", "Alergias"], ["enfermedades_relevantes", "Enfermedades relevantes"], ["medicacion_habitual", "Medicación habitual"], ["medico_referencia", "Médico de referencia"]].map(([campo, etiqueta]) => <label key={campo}><span>{etiqueta}</span><input name={campo} defaultValue={perfil[campo] ?? ""} /></label>)}</div><div className="modal-acciones"><button type="button" className="secundario" onClick={() => setFormularioAbierto(false)}>Cerrar</button><button className="primario">Guardar</button></div></form> :
-      <form className="formulario-salud" onSubmit={(e) => guardarSalud(e, pestana)}><div className="campos">{CAMPOS_SALUD[pestana].map(([campo, etiqueta, tipo]) => <label key={campo} className={tipo === "textarea" ? "ancho" : ""}><span>{etiqueta}</span>{tipo === "textarea" ? <textarea name={campo} rows={4} /> : tipo === "unidad" ? <select name={campo} defaultValue="semanas"><option value="semanas">Semanas</option><option value="meses">Meses</option></select> : <input name={campo} type={tipo === "date" || tipo === "number" ? tipo : "text"} list={tipo === "sugerencia" ? "tipos-atencion" : undefined} step={tipo === "number" ? "0.01" : undefined} defaultValue={tipo === "date" && !["fecha_fin", "proxima_fecha", "proximo_control"].includes(campo) ? new Date().toISOString().slice(0, 10) : undefined} required={["fecha", "nombre", "registrado_en"].includes(campo)} />}</label>)}</div><datalist id="tipos-atencion">{Array.from(new Set(datosSalud.flatMap((p) => (p.tb_historial_medico ?? []).map((r: Record<string, string>) => r.tipo).filter(Boolean))).values()).map((x) => <option key={String(x)} value={String(x)} />)}</datalist><div className="modal-acciones"><button type="button" className="secundario" onClick={() => setFormularioAbierto(false)}>Cerrar</button><button className="primario">Guardar registro</button></div></form>}</section></div>}
+      <form className="formulario-salud" onSubmit={(e) => guardarSalud(e, pestana)}><div className="campos">{CAMPOS_SALUD[pestana].map(([campo, etiqueta, tipo]) => <label key={campo} className={tipo === "textarea" ? "ancho" : ""}><span>{etiqueta}</span>{tipo === "textarea" ? <textarea name={campo} rows={4} /> : tipo === "unidad" ? <select name={campo} defaultValue="semanas"><option value="semanas">Semanas</option><option value="meses">Meses</option></select> : <input name={campo} type={tipo === "date" || tipo === "number" ? tipo : "text"} list={tipo === "sugerencia" ? "tipos-atencion" : undefined} step={tipo === "number" ? "0.01" : undefined} defaultValue={tipo === "date" && !["fecha_fin", "proxima_fecha", "proximo_control"].includes(campo) ? new Date().toISOString().slice(0, 10) : undefined} required={["fecha", "nombre", "registrado_en"].includes(campo)} />}</label>)}</div>{pestana === "historial" && <fieldset className="medicamentos-tratamiento"><legend>Medicamentos del tratamiento</legend><div className="tabla-medicamentos"><div className="tabla-medicamentos-cabecera"><span>Medicamento</span><span>Dosis</span><span>Frecuencia</span><span>Indicaciones</span><span /></div>{medicamentosTratamiento.map((m, i) => <div className="tabla-medicamentos-fila" key={i}><input value={m.nombre} placeholder="Nombre" onChange={(e) => setMedicamentosTratamiento(medicamentosTratamiento.map((x, n) => n === i ? { ...x, nombre: e.target.value } : x))} /><input value={m.dosis} placeholder="Dosis" onChange={(e) => setMedicamentosTratamiento(medicamentosTratamiento.map((x, n) => n === i ? { ...x, dosis: e.target.value } : x))} /><input value={m.frecuencia} placeholder="Cada 8 horas" onChange={(e) => setMedicamentosTratamiento(medicamentosTratamiento.map((x, n) => n === i ? { ...x, frecuencia: e.target.value } : x))} /><input value={m.indicaciones} placeholder="Indicaciones" onChange={(e) => setMedicamentosTratamiento(medicamentosTratamiento.map((x, n) => n === i ? { ...x, indicaciones: e.target.value } : x))} />{medicamentosTratamiento.length > 1 && <button type="button" className="quitar" onClick={() => setMedicamentosTratamiento(medicamentosTratamiento.filter((_, n) => n !== i))}>×</button>}</div>)}</div><button type="button" className="secundario agregar-medicamento" onClick={() => setMedicamentosTratamiento([...medicamentosTratamiento, { nombre: "", dosis: "", frecuencia: "", indicaciones: "" }])}>＋ Agregar medicamento</button></fieldset>}<datalist id="tipos-atencion">{Array.from(new Set(datosSalud.flatMap((p) => (p.tb_historial_medico ?? []).map((r: Record<string, string>) => r.tipo).filter(Boolean))).values()).map((x) => <option key={String(x)} value={String(x)} />)}</datalist><div className="modal-acciones"><button type="button" className="secundario" onClick={() => setFormularioAbierto(false)}>Cerrar</button><button className="primario">Guardar registro</button></div></form>}</section></div>}
   </>;
 }
 
@@ -366,7 +367,7 @@ function VistaModulo({ titulo, registros, onAdd }: { titulo: string; registros: 
   </>;
 }
 
-type UsuarioConfig = { id: string; usuario_id: string | null; nombre_completo: string; codigo: string; activo: boolean; rol: "administrador" | "integrante" };
+type UsuarioConfig = { id: string; usuario_id: string | null; nombre_completo: string; codigo: string; activo: boolean; rol: "administrador" | "integrante"; requiere_asistencia: boolean };
 function VistaConfiguracion({ onChanged }: { onChanged: () => void }) {
   const [usuarios, setUsuarios] = useState<UsuarioConfig[]>([]);
   const [guardado, setGuardado] = useState("");
@@ -391,6 +392,7 @@ function VistaConfiguracion({ onChanged }: { onChanged: () => void }) {
       <label><span>Nombre completo</span><input value={u.nombre_completo} onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, nombre_completo: e.target.value } : x))} /></label>
       <label><span>{u.usuario_id ? "Código de acceso" : "Asignar código de acceso"}</span><input inputMode="numeric" maxLength={8} value={u.codigo} placeholder="8 dígitos" onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, codigo: e.target.value.replace(/\D/g, "") } : x))} /></label>
       <label><span>Rol</span><select value={u.rol ?? "integrante"} onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, rol: e.target.value as "administrador" | "integrante" } : x))}><option value="integrante">Integrante</option><option value="administrador">Administrador</option></select></label>
+      <label className="check-asistencia"><span>Asistencia</span><span><input type="checkbox" checked={u.requiere_asistencia} onChange={(e) => setUsuarios(usuarios.map((x, n) => n === i ? { ...x, requiere_asistencia: e.target.checked } : x))} /> Requiere asistencia</span></label>
       <div className="guardar-config"><button className="primario">Guardar</button>{u.usuario_id && <button type="button" className="restablecer" onClick={() => guardarUsuario(u, true)}>Restablecer contraseña</button>}{guardado === u.id && <small>✓ Guardado</small>}</div>
     </form>)}</section>
   </>;
