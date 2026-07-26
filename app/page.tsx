@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Archive, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards } from "lucide-react";
 
 type Registro = {
   titulo: string;
@@ -60,17 +61,10 @@ type Integrante = {
 };
 
 const navegacion = [
-  ["Inicio", "⌂"],
-  ["Integrantes", "◎"],
-  ["Salud", "♡"],
-  ["Finanzas", "▥"],
-  ["Precios", "⌕"],
-  ["Educación", "▤"],
-  ["Seguros", "◇"],
-  ["Viajes y eventos", "✦"],
-  ["Mascotas", "♧"],
-  ["Archivos históricos", "□"],
-];
+  ["Inicio", HomeIcon], ["Integrantes", Users], ["Salud", HeartPulse], ["Finanzas", WalletCards],
+  ["Precios", ShoppingBasket], ["Educación", GraduationCap], ["Seguros", ShieldCheck],
+  ["Viajes y eventos", Plane], ["Mascotas", PawPrint], ["Archivos históricos", Archive],
+] as const;
 
 const integrantes: Integrante[] = [];
 
@@ -195,6 +189,7 @@ export default function Home() {
     "integrante",
   );
   const [ficha, setFicha] = useState<Integrante | null>(null);
+  const [fichaDesdeSalud, setFichaDesdeSalud] = useState(false);
   const [menuCuenta, setMenuCuenta] = useState(false);
 
   async function cargarDatos() {
@@ -406,20 +401,20 @@ export default function Home() {
     );
 
   return (
-    <div className={`aplicacion ${oscuro ? "dark" : ""}`}>
+    <div className={`aplicacion ${oscuro ? "dark" : ""} tema-${seccion.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s+/g, "-")}`}>
       <main className="contenido">
         <header className="barra">
           <div className="marca-nav" title="Familia Alania">
             FA
           </div>
           <nav className="nav-superior" aria-label="Navegación principal">
-            {navegacion.map(([nombre]) => (
+            {navegacion.map(([nombre, IconoNav]) => (
               <button
                 key={nombre}
                 className={seccion === nombre ? "activo" : ""}
                 onClick={() => setSeccion(nombre)}
               >
-                {nombre}
+                <IconoNav size={15} strokeWidth={1.8} /> {nombre}
                 {nombre === "Salud" && <b>2</b>}
               </button>
             ))}
@@ -494,7 +489,10 @@ export default function Home() {
               onOpen={setFicha}
             />
           ) : seccion === "Salud" ? (
-            <VistaSalud onChanged={cargarDatos} />
+            <VistaSalud onChanged={cargarDatos} onEditProfile={(id) => {
+              const persona = integrantesVisibles.find((p) => p.id === id);
+              if (persona) { setFichaDesdeSalud(true); setFicha(persona); }
+            }} />
           ) : seccion === "Configuración" ? (
             <VistaConfiguracion onChanged={cargarDatos} />
           ) : (
@@ -538,10 +536,13 @@ export default function Home() {
           puedeEditar={
             rolSesion === "administrador" || ficha.usuarioId === usuarioId
           }
-          onClose={() => setFicha(null)}
+          onClose={() => { setFicha(null); setFichaDesdeSalud(false); }}
+          soloSalud={fichaDesdeSalud}
           onSaved={async () => {
             setFicha(null);
             await cargarDatos();
+            if (fichaDesdeSalud) setSeccion("Salud");
+            setFichaDesdeSalud(false);
             setAviso("Ficha actualizada correctamente");
             window.setTimeout(() => setAviso(""), 2600);
           }}
@@ -726,7 +727,7 @@ function VistaIntegrantes({
         <button className="secundario">Todos los roles⌄</button>
       </div>
       <section className="grilla-personas">
-        {personas.map((p) => {
+        {[...personas].sort((a, b) => Number(b.usuarioId === usuarioId) - Number(a.usuarioId === usuarioId)).map((p) => {
           const puedeEditar = esAdministrador || p.usuarioId === usuarioId;
           const direccion =
             [p.direccion_actual, p.distrito, p.provincia, p.departamento]
@@ -829,7 +830,7 @@ const TABLAS_SALUD: Record<string, string> = {
   signos: "tb_signos_vitales",
 };
 
-function VistaSalud({ onChanged }: { onChanged: () => void }) {
+function VistaSalud({ onChanged, onEditProfile }: { onChanged: () => void; onEditProfile: (id: string) => void }) {
   const [datosSalud, setDatosSalud] = useState<Record<string, any>[]>([]);
   const [usuarioActual, setUsuarioActual] = useState("");
   const [rolActual, setRolActual] = useState("");
@@ -974,7 +975,7 @@ function VistaSalud({ onChanged }: { onChanged: () => void }) {
               <p>Información compartida con la ficha del integrante</p>
             </div>
             {puedeEditar && (
-              <button onClick={() => setFormularioAbierto(true)}>
+              <button onClick={() => onEditProfile(integranteId)}>
                 Editar →
               </button>
             )}
@@ -1862,11 +1863,13 @@ function ModalFicha({
   puedeEditar,
   onClose,
   onSaved,
+  soloSalud = false,
 }: {
   integrante: Integrante;
   puedeEditar: boolean;
   onClose: () => void;
   onSaved: () => void;
+  soloSalud?: boolean;
 }) {
   const [error, setError] = useState("");
   const [contactos, setContactos] = useState(
@@ -1922,7 +1925,7 @@ function ModalFicha({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <section
-        className="modal modal-ficha"
+        className={`modal modal-ficha ${soloSalud ? "solo-salud" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Ficha de ${integrante.nombre}`}
@@ -2385,11 +2388,9 @@ function ModalFicha({
           </ListaEditable>
           {error && <p className="error">{error}</p>}
           <div className="modal-acciones">
-            <button type="button" className="secundario" onClick={onClose}>
-              {puedeEditar ? "Cancelar" : "Cerrar"}
-            </button>
+            {!soloSalud && <button type="button" className="secundario" onClick={onClose}>{puedeEditar ? "Cancelar" : "Cerrar"}</button>}
             {puedeEditar && (
-              <button className="primario">Guardar cambios</button>
+              <button className="primario">{soloSalud ? "← Volver y guardar" : "Guardar cambios"}</button>
             )}
           </div>
         </form>
