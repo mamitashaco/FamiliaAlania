@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Archive, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards } from "lucide-react";
+import { Archive, CalendarDays, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards } from "lucide-react";
 
 type Registro = {
   titulo: string;
@@ -2528,7 +2528,8 @@ function Modal({
             {seccion === "Precios" && (
               <label>
                 <span>
-                  Fecha <b className="obligatorio">*</b>
+                  <CalendarDays size={15} aria-hidden="true" /> Fecha{" "}
+                  <b className="obligatorio">*</b>
                 </span>
                 <input
                   name="fecha"
@@ -2538,7 +2539,7 @@ function Modal({
                 />
               </label>
             )}
-            <label>
+            <label className={seccion === "Precios" ? "ancho" : ""}>
               <span>
                 {seccion === "Precios" ? "Descripción del producto" : "Título"}{" "}
                 <b className="obligatorio">*</b>
@@ -2553,19 +2554,27 @@ function Modal({
                 }
               />
             </label>
-            <label>
-              <span>
-                {seccion === "Precios" ? "Categoría" : "Fecha"}{" "}
-                <b className="obligatorio">*</b>
-              </span>
-              <input
-                name={seccion === "Precios" ? "categoria" : "fecha"}
-                required
-                type={seccion === "Precios" ? "text" : "date"}
-              />
-            </label>
+            {seccion !== "Precios" && (
+              <label>
+                <span>
+                  Fecha <b className="obligatorio">*</b>
+                </span>
+                <input name="fecha" required type="date" />
+              </label>
+            )}
             {seccion === "Precios" && (
               <>
+                <label>
+                  <span>
+                    Presentación <b className="obligatorio">*</b>
+                  </span>
+                  <input
+                    name="presentacion"
+                    required
+                    placeholder="Ej. Botella 1 L"
+                  />
+                  <small>El primer valor numérico se usa para el cálculo.</small>
+                </label>
                 <label>
                   <span>
                     Precio (S/) <b className="obligatorio">*</b>
@@ -2574,29 +2583,22 @@ function Modal({
                     name="precio"
                     required
                     type="number"
+                    min="0.01"
                     step="0.01"
                     placeholder="0.00"
                   />
                 </label>
                 <label>
                   <span>
-                    Presentación <b className="obligatorio">*</b>
-                  </span>
-                  <input
-                    name="presentacion"
-                    required
-                    type="number"
-                    min="0.0001"
-                    step="any"
-                    placeholder="Ej. 6"
-                  />
-                  <small>Ingresa solo la cantidad, sin unidades.</small>
-                </label>
-                <label>
-                  <span>
                     Tienda <b className="obligatorio">*</b>
                   </span>
                   <input name="tienda" required placeholder="Nombre de la tienda" />
+                </label>
+                <label>
+                  <span>
+                    Categoría <b className="obligatorio">*</b>
+                  </span>
+                  <input name="categoria" required placeholder="Ej. Alimentos" />
                 </label>
               </>
             )}

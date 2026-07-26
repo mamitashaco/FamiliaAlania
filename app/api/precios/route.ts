@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
   const cuerpo = await request.json();
   const descripcion = String(cuerpo.descripcion ?? "").trim();
   const categoria = String(cuerpo.categoria ?? "").trim();
-  const presentacion = Number(cuerpo.presentacion);
+  const presentacionTexto = String(cuerpo.presentacion ?? "").trim();
+  const cantidadPresentacion = Number(
+    presentacionTexto.match(/\d+(?:[.,]\d+)?/)?.[0].replace(",", "."),
+  );
   const tienda = String(cuerpo.tienda ?? "").trim();
   const fecha = String(cuerpo.fecha ?? "").trim();
   const precio = Number(cuerpo.precio);
@@ -39,8 +42,9 @@ export async function POST(request: NextRequest) {
     !tienda ||
     !Number.isFinite(precio) ||
     precio <= 0 ||
-    !Number.isFinite(presentacion) ||
-    presentacion <= 0
+    !presentacionTexto ||
+    !Number.isFinite(cantidadPresentacion) ||
+    cantidadPresentacion <= 0
   )
     return NextResponse.json({ error: "Completa todos los campos obligatorios" }, { status: 400 });
 
@@ -55,7 +59,7 @@ export async function POST(request: NextRequest) {
     const resultado = await supabase.from("tb_productos").insert({
       descripcion,
       categoria,
-      presentacion: String(presentacion),
+      presentacion: presentacionTexto,
     }).select("id").single();
     if (resultado.error)
       return NextResponse.json({ error: resultado.error.message }, { status: 500 });
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest) {
     producto_id: producto.id,
     tienda_id: tiendaBd.id,
     precio,
-    costo_unitario: Number((precio / presentacion).toFixed(4)),
+    costo_unitario: Number((precio / cantidadPresentacion).toFixed(4)),
     registrado_por: actual.usuarioId,
     registrado_en: `${fecha}T12:00:00-05:00`,
   });
