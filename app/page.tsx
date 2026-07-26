@@ -281,7 +281,9 @@ function VistaIntegrantes({ buscar, setBuscar, personas, onAdd, onOpen, esAdmini
     <div className="herramientas"><div className="buscador">⌕<input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar por nombre" /></div><button className="secundario">Todos los roles⌄</button></div>
     <section className="grilla-personas">{personas.map((p) => {
       const puedeEditar = esAdministrador || p.usuarioId === usuarioId;
-      return <article className="tarjeta ficha" key={p.id}><div className="ficha-arriba"><span className="avatar grande">{p.iniciales}</span><span className="insignia">{p.rol}</span></div><h2>{p.nombre}</h2><p>{p.edad} · {p.lugar}</p><dl><div><dt>Código</dt><dd>{p.codigo}</dd></div><div><dt>Estado</dt><dd>Activo</dd></div></dl><div className="ficha-acciones"><button className="secundario" onClick={() => onOpen(p)}>{puedeEditar ? "Ver y editar ficha" : "Ver ficha"}</button></div></article>;
+      const direccion = [p.direccion_actual, p.distrito, p.provincia, p.departamento].filter(Boolean).join(", ") || "Sin registrar";
+      const fechaCercana = calcularProximasFechas([p])[0];
+      return <article className="tarjeta ficha" key={p.id}><div className="ficha-arriba"><span className="avatar grande">{p.iniciales}</span></div><h2>{p.nombre}</h2><p>{p.edad} · {p.lugar}</p><dl><div><dt>DNI</dt><dd>{p.dni || "Sin registrar"}</dd></div><div><dt>Dirección</dt><dd className="dato-largo">{direccion}</dd></div><div><dt>Próxima fecha</dt><dd>{fechaCercana ? `${fechaCercana.titulo} · ${fechaCercana.fecha.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}` : "Sin fechas próximas"}</dd></div></dl><div className="ficha-acciones"><button className="secundario" onClick={() => onOpen(p)}>{puedeEditar ? "Ver y editar ficha" : "Ver ficha"}</button></div></article>;
     })}</section>
   </>;
 }
