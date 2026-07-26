@@ -70,6 +70,13 @@ const integrantes: Integrante[] = [];
 
 const datos: Record<string, Registro[]> = {};
 
+function relacionUnica(valor: unknown): Record<string, any> {
+  if (Array.isArray(valor)) return valor[0] ?? {};
+  return valor && typeof valor === "object"
+    ? (valor as Record<string, any>)
+    : {};
+}
+
 function Icono({ children }: { children: React.ReactNode }) {
   return (
     <span className="icono" aria-hidden="true">
@@ -190,6 +197,7 @@ export default function Home() {
   );
   const [ficha, setFicha] = useState<Integrante | null>(null);
   const [fichaDesdeSalud, setFichaDesdeSalud] = useState(false);
+  const [versionSalud, setVersionSalud] = useState(0);
   const [menuCuenta, setMenuCuenta] = useState(false);
 
   async function cargarDatos() {
@@ -202,7 +210,7 @@ export default function Home() {
       (json.integrantes ?? []).map((p: Record<string, any>) => {
         const partes = p.nombre_completo.split(" ");
         const laboral = p.tb_informacion_laboral?.[0] ?? {};
-        const salud = p.tb_salud_perfil?.[0] ?? {};
+        const salud = relacionUnica(p.tb_salud_perfil);
         return {
           id: p.id,
           usuarioId: p.usuario_id,
@@ -489,7 +497,7 @@ export default function Home() {
               onOpen={setFicha}
             />
           ) : seccion === "Salud" ? (
-            <VistaSalud onChanged={cargarDatos} onEditProfile={(id) => {
+            <VistaSalud key={versionSalud} onChanged={cargarDatos} onEditProfile={(id) => {
               const persona = integrantesVisibles.find((p) => p.id === id);
               if (persona) { setFichaDesdeSalud(true); setFicha(persona); }
             }} />
@@ -541,7 +549,10 @@ export default function Home() {
           onSaved={async () => {
             setFicha(null);
             await cargarDatos();
-            if (fichaDesdeSalud) setSeccion("Salud");
+            if (fichaDesdeSalud) {
+              setVersionSalud((actual) => actual + 1);
+              setSeccion("Salud");
+            }
             setFichaDesdeSalud(false);
             setAviso("Ficha actualizada correctamente");
             window.setTimeout(() => setAviso(""), 2600);
@@ -870,7 +881,7 @@ function VistaSalud({ onChanged, onEditProfile }: { onChanged: () => void; onEdi
     rolActual === "administrador" ||
     persona?.usuario_id === usuarioActual ||
     persona?.observaciones?.includes("[ASISTENCIA]");
-  const perfil = persona?.tb_salud_perfil?.[0] ?? {};
+  const perfil = relacionUnica(persona?.tb_salud_perfil);
   const registros =
     pestana === "perfil" ? [] : (persona?.[TABLAS_SALUD[pestana]] ?? []);
 
