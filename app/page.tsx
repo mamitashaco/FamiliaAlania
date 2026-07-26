@@ -330,7 +330,7 @@ function VistaSalud() {
     e.preventDefault();
     const formulario = e.currentTarget;
     const valores = Object.fromEntries(new FormData(formulario));
-    const respuesta = await fetch("/api/salud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrante_id: integranteId, tipo, ...valores, medicamentos: tipo === "historial" ? medicamentosTratamiento : undefined }) });
+    const respuesta = await fetch("/api/salud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrante_id: integranteId, seccion: tipo, ...valores, medicamentos: tipo === "historial" ? medicamentosTratamiento : undefined }) });
     const json = await respuesta.json();
     setAvisoSalud(respuesta.ok ? "✓ Guardado" : json.error ?? "No se pudo guardar");
     if (respuesta.ok) { formulario.reset(); setMedicamentosTratamiento([{ nombre: "", dosis: "", frecuencia: "", indicaciones: "" }]); setFormularioAbierto(false); await cargarSalud(); }

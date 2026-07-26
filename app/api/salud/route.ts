@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No tienes permiso para editar esta información" }, { status: 403 });
   }
   const supabase = supabaseServidor();
-  if (cuerpo.tipo === "perfil") {
+  if (cuerpo.seccion === "perfil") {
     const valores = {
       integrante_id: integranteId, tipo_sangre: cuerpo.tipo_sangre || null, seguro_medico: cuerpo.seguro_medico || null,
       alergias: cuerpo.alergias || null, enfermedades_relevantes: cuerpo.enfermedades_relevantes || null,
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     examenes: { tabla: "tb_examenes", campos: ["nombre", "fecha", "resultado_resumen", "proximo_control"] },
     signos: { tabla: "tb_signos_vitales", campos: ["registrado_en", "peso_kg", "talla_cm", "presion_arterial", "temperatura", "glucosa", "saturacion", "pulso", "observaciones"] },
   };
-  const config = configuracion[cuerpo.tipo];
+  const config = configuracion[cuerpo.seccion];
   if (!config) return NextResponse.json({ error: "Tipo de registro inválido" }, { status: 400 });
   const requeridos: Record<string, string[]> = {
     historial: ["fecha", "diagnostico", "tratamiento"],
@@ -58,28 +58,28 @@ export async function POST(request: NextRequest) {
     examenes: ["nombre", "fecha"],
     signos: ["registrado_en"],
   };
-  const faltante = requeridos[cuerpo.tipo]?.find((campo) => !String(cuerpo[campo] ?? "").trim());
+  const faltante = requeridos[cuerpo.seccion]?.find((campo) => !String(cuerpo[campo] ?? "").trim());
   if (faltante) return NextResponse.json({ error: "Completa todos los campos marcados con *" }, { status: 400 });
   const valores: Record<string, unknown> = { integrante_id: integranteId };
   config.campos.forEach((campo) => { valores[campo] = cuerpo[campo] || null; });
-  if (cuerpo.tipo === "medicamentos" && cuerpo.frecuencia_horas) valores.frecuencia = `Cada ${cuerpo.frecuencia_horas} horas`;
-  if (cuerpo.tipo === "medicamentos" && !valores.fecha_fin && cuerpo.duracion_dias && cuerpo.fecha_inicio) {
+  if (cuerpo.seccion === "medicamentos" && cuerpo.frecuencia_horas) valores.frecuencia = `Cada ${cuerpo.frecuencia_horas} horas`;
+  if (cuerpo.seccion === "medicamentos" && !valores.fecha_fin && cuerpo.duracion_dias && cuerpo.fecha_inicio) {
     const fin = new Date(`${cuerpo.fecha_inicio}T00:00:00`); fin.setDate(fin.getDate() + Number(cuerpo.duracion_dias));
     valores.fecha_fin = fin.toISOString().slice(0, 10);
   }
-  if (cuerpo.tipo === "medicamentos" && !valores.fecha_fin && cuerpo.repeticiones && cuerpo.frecuencia_horas && cuerpo.fecha_inicio) {
+  if (cuerpo.seccion === "medicamentos" && !valores.fecha_fin && cuerpo.repeticiones && cuerpo.frecuencia_horas && cuerpo.fecha_inicio) {
     const horas = Number(cuerpo.repeticiones) * Number(cuerpo.frecuencia_horas);
     const fin = new Date(`${cuerpo.fecha_inicio}T00:00:00`); fin.setHours(fin.getHours() + horas);
     valores.fecha_fin = fin.toISOString().slice(0, 10);
   }
-  if (cuerpo.tipo === "vacunas" && !valores.proxima_fecha && cuerpo.proxima_cantidad) {
+  if (cuerpo.seccion === "vacunas" && !valores.proxima_fecha && cuerpo.proxima_cantidad) {
     const proxima = new Date(`${cuerpo.fecha_aplicacion || new Date().toISOString().slice(0, 10)}T00:00:00`);
     cuerpo.proxima_unidad === "semanas" ? proxima.setDate(proxima.getDate() + Number(cuerpo.proxima_cantidad) * 7) : proxima.setMonth(proxima.getMonth() + Number(cuerpo.proxima_cantidad));
     valores.proxima_fecha = proxima.toISOString().slice(0, 10);
   }
   const { error } = await supabase.from(config.tabla).insert(valores);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (cuerpo.tipo === "historial" && Array.isArray(cuerpo.medicamentos)) {
+  if (cuerpo.seccion === "historial" && Array.isArray(cuerpo.medicamentos)) {
     const medicamentos = cuerpo.medicamentos.filter((m: Record<string, string>) => m.nombre).map((m: Record<string, string>) => ({
       integrante_id: integranteId, nombre: m.nombre, dosis: m.dosis || null, frecuencia: m.frecuencia || null,
       fecha_inicio: cuerpo.fecha || new Date().toISOString().slice(0, 10), indicaciones: m.indicaciones || "Registrado desde historial médico",
