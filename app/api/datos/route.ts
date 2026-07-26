@@ -27,16 +27,20 @@ export async function GET(request: NextRequest) {
     if (hoy.getMonth() < nacimiento.getMonth() || (hoy.getMonth() === nacimiento.getMonth() && hoy.getDate() < nacimiento.getDate())) edad--;
     return { ...integrante, edad };
   });
-  return NextResponse.json({ integrantes: conEdad, usuarioId: sesion.usuarioId, rol: sesion.rol });
+  const { data: usuarios } = sesion.rol === "administrador"
+    ? await supabase.from("tb_usuarios").select("id,codigo")
+    : { data: [] };
+  const codigos = new Map((usuarios ?? []).map((u) => [u.id, u.codigo.trim()]));
+  const datos = conEdad?.map((integrante) => ({
+    ...integrante,
+    codigo_acceso: sesion.rol === "administrador" && integrante.usuario_id ? codigos.get(integrante.usuario_id) ?? null : null,
+  }));
+  return NextResponse.json({ integrantes: datos, usuarioId: sesion.usuarioId, rol: sesion.rol });
 }
 
 export async function POST(request: NextRequest) {
   const sesion = obtenerSesion(request);
   if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  if (sesion.rol !== "administrador") {
-    return NextResponse.json({ error: "Solo el administrador puede crear integrantes" }, { status: 403 });
-  }
-
   const cuerpo = await request.json();
   const nombre = String(cuerpo.nombre_completo ?? "").trim();
   const parentesco = String(cuerpo.parentesco ?? "").trim();
@@ -45,9 +49,10 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = supabaseServidor();
+  const { data: creador } = await supabase.from("tb_integrantes").select("nombre_completo").eq("usuario_id", sesion.usuarioId).maybeSingle();
   const { data, error } = await supabase
     .from("tb_integrantes")
-    .insert({ nombre_completo: nombre, observaciones: `Parentesco: ${parentesco}` })
+    .insert({ nombre_completo: nombre, observaciones: `Parentesco con ${creador?.nombre_completo ?? "usuario"}: ${parentesco}` })
     .select("id")
     .single();
 
@@ -64,6 +69,23 @@ export async function PATCH(request: NextRequest) {
   if (!id) return NextResponse.json({ error: "Ficha inválida" }, { status: 400 });
 
   const supabase = supabaseServidor();
+  if (cuerpo.accion === "configuracion") {
+    if (sesion.rol !== "administrador") return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+    const nombre = String(cuerpo.nombre_completo ?? "").trim();
+    const codigo = String(cuerpo.codigo ?? "").trim();
+    const usuarioId = cuerpo.usuario_id ? String(cuerpo.usuario_id) : "";
+    if (!nombre) return NextResponse.json({ error: "El nombre es obligatorio" }, { status: 400 });
+    if (usuarioId && !/^\d{8}$/.test(codigo)) {
+      return NextResponse.json({ error: "El código debe contener exactamente 8 dígitos" }, { status: 400 });
+    }
+    if (usuarioId) {
+      const { error: errorCodigo } = await supabase.from("tb_usuarios").update({ codigo, actualizado_en: new Date().toISOString() }).eq("id", usuarioId);
+      if (errorCodigo) return NextResponse.json({ error: errorCodigo.code === "23505" ? "Ese código ya está asignado" : errorCodigo.message }, { status: 400 });
+    }
+    const { error: errorNombre } = await supabase.from("tb_integrantes").update({ nombre_completo: nombre, actualizado_en: new Date().toISOString() }).eq("id", id);
+    if (errorNombre) return NextResponse.json({ error: errorNombre.message }, { status: 500 });
+    return NextResponse.json({ guardado: true });
+  }
   const { data: integrante } = await supabase
     .from("tb_integrantes")
     .select("usuario_id")
@@ -125,12 +147,20 @@ export async function PATCH(request: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const fechas = Array.isArray(cuerpo.fechas) ? cuerpo.fechas.filter((x: Record<string, string>) => x.titulo && x.fecha) : [];
+  const fechasEntrada = Array.isArray(cuerpo.fechas) ? cuerpo.fechas.filter((x: Record<string, string>) => x.titulo && x.valor) : [];
+  type FechaGuardada = { titulo: string; tipo: string; fecha: string; recurrente_anual: boolean };
+  const fechas: FechaGuardada[] = fechasEntrada.map((x: Record<string, string>): FechaGuardada | null => {
+    if (x.tipo === "regla") return { titulo: x.titulo, tipo: `regla:${x.valor.trim()}`, fecha: "2000-01-01", recurrente_anual: true };
+    if (x.tipo === "anual") {
+      const partes = x.valor.match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (!partes) return null;
+      return { titulo: x.titulo, tipo: "anual", fecha: `2000-${partes[2].padStart(2, "0")}-${partes[1].padStart(2, "0")}`, recurrente_anual: true };
+    }
+    return { titulo: x.titulo, tipo: "completa", fecha: x.valor, recurrente_anual: false };
+  }).filter((x: FechaGuardada | null): x is FechaGuardada => x !== null);
   await supabase.from("tb_fechas_importantes").delete().eq("integrante_id", id);
   if (fechas.length) {
-    const { error } = await supabase.from("tb_fechas_importantes").insert(fechas.map((x: Record<string, string>) => ({
-      integrante_id: id, titulo: x.titulo, fecha: x.fecha,
-    })));
+    const { error } = await supabase.from("tb_fechas_importantes").insert(fechas.map((x) => ({ integrante_id: id, ...x })));
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

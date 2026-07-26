@@ -13,7 +13,7 @@ type Integrante = {
   medicacion_habitual?: string; medico_referencia?: string;
   cuentas: Array<{ banco_principal: string; tipo_cuenta: string; observaciones: string }>;
   contactos: Array<{ nombre: string; relacion: string; telefono: string }>;
-  fechas: Array<{ titulo: string; fecha: string }>;
+  fechas: Array<{ titulo: string; tipo: "completa" | "anual" | "regla"; valor: string }>;
 };
 
 const navegacion = [
@@ -75,7 +75,11 @@ export default function Home() {
         medico_referencia: salud.medico_referencia ?? "",
         cuentas: (p.tb_cuentas_financieras ?? []).map((x: Record<string, string>) => ({ banco_principal: x.banco_principal ?? "", tipo_cuenta: x.tipo_cuenta ?? "", observaciones: x.observaciones ?? "" })),
         contactos: (p.tb_contactos_emergencia ?? []).map((x: Record<string, string>) => ({ nombre: x.nombre ?? "", relacion: x.relacion ?? "", telefono: x.telefono ?? "" })),
-        fechas: (p.tb_fechas_importantes ?? []).map((x: Record<string, string>) => ({ titulo: x.titulo ?? "", fecha: x.fecha ?? "" })),
+        fechas: (p.tb_fechas_importantes ?? []).map((x: Record<string, string>) => {
+          const tipo = x.tipo?.startsWith("regla:") ? "regla" : x.tipo === "anual" ? "anual" : "completa";
+          const valor = tipo === "regla" ? x.tipo.slice(6) : tipo === "anual" ? `${x.fecha?.slice(8, 10)}/${x.fecha?.slice(5, 7)}` : x.fecha ?? "";
+          return { titulo: x.titulo ?? "", tipo, valor };
+        }),
       };
     }));
   }
@@ -175,7 +179,7 @@ export default function Home() {
 
         <div className="pagina">
           {seccion === "Inicio" ? <Inicio personas={integrantesVisibles} onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")}
-            saludo={rolSesion === "administrador" ? `Buenos días, Administrador ${integrantesVisibles.find((p) => p.usuarioId === usuarioId)?.nombre ?? ""}`.trim() : `Buenos días, ${integrantesVisibles.find((p) => p.usuarioId === usuarioId)?.nombre ?? "Integrante"}`} /> :
+            nombre={integrantesVisibles.find((p) => p.usuarioId === usuarioId)?.nombre.split(" ")[0] ?? "Integrante"} /> :
             seccion === "Integrantes" ? (
               <VistaIntegrantes buscar={buscar} setBuscar={setBuscar} personas={personasFiltradas}
                 esAdministrador={rolSesion === "administrador"} usuarioId={usuarioId}
@@ -199,10 +203,12 @@ export default function Home() {
   );
 }
 
-function Inicio({ personas, onNavigate, onAdd, saludo }: { personas: typeof integrantes; onNavigate: (s: string) => void; onAdd: () => void; saludo: string }) {
+function Inicio({ personas, onNavigate, onAdd, nombre }: { personas: typeof integrantes; onNavigate: (s: string) => void; onAdd: () => void; nombre: string }) {
+  const hora = new Date().getHours();
+  const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
   return <>
     <section className="bienvenida">
-      <div><div className="etiqueta">ESPACIO FAMILIAR</div><h1>{saludo}</h1><p>Información familiar centralizada y protegida.</p></div>
+      <div><div className="etiqueta">ESPACIO FAMILIAR</div><h1>{saludo}, {nombre}</h1><p>Información familiar centralizada y protegida.</p></div>
       <button className="primario" onClick={onAdd}>＋ Agregar registro</button>
     </section>
     <section className="metricas">
@@ -223,7 +229,7 @@ function VistaIntegrantes({ buscar, setBuscar, personas, onAdd, onOpen, esAdmini
 }) {
   return <>
     <TituloPagina etiqueta="FAMILIA" titulo="Integrantes" descripcion="Perfiles, contactos y datos importantes de cada miembro."
-      onAdd={esAdministrador ? onAdd : undefined} textoBoton="Agregar integrante +" />
+      onAdd={onAdd} textoBoton="Agregar integrante +" />
     <div className="herramientas"><div className="buscador">⌕<input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Buscar por nombre" /></div><button className="secundario">Todos los roles⌄</button></div>
     <section className="grilla-personas">{personas.map((p) => {
       const puedeEditar = esAdministrador || p.usuarioId === usuarioId;
@@ -313,7 +319,7 @@ function fechaActualizacion(valor?: string) {
 function ModalFicha({ integrante, puedeEditar, onClose, onSaved }: { integrante: Integrante; puedeEditar: boolean; onClose: () => void; onSaved: () => void }) {
   const [error, setError] = useState("");
   const [contactos, setContactos] = useState(integrante.contactos.length ? integrante.contactos : [{ nombre: "", relacion: "", telefono: "" }]);
-  const [fechasImportantes, setFechasImportantes] = useState(integrante.fechas.length ? integrante.fechas : [{ titulo: "", fecha: "" }]);
+  const [fechasImportantes, setFechasImportantes] = useState(integrante.fechas.length ? integrante.fechas : [{ titulo: "", tipo: "completa" as const, valor: "" }]);
   const [cuentas, setCuentas] = useState(integrante.cuentas.length ? integrante.cuentas : [{ banco_principal: "", tipo_cuenta: "", observaciones: "" }]);
   async function guardarFicha(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -335,8 +341,9 @@ function ModalFicha({ integrante, puedeEditar, onClose, onSaved }: { integrante:
       <ListaEditable titulo="Contactos de emergencia" actualizado={integrante.actualizado_en} puedeEditar={puedeEditar} onAdd={() => setContactos([...contactos, { nombre: "", relacion: "", telefono: "" }])}>
         {contactos.map((c, i) => <div className="registro-repetible" key={i}><div className="campos tres"><label><span>Nombre</span><input value={c.nombre} disabled={!puedeEditar} onChange={(e) => setContactos(contactos.map((x, n) => n === i ? { ...x, nombre: e.target.value } : x))} /></label><label><span>Relación</span><select value={c.relacion} disabled={!puedeEditar} onChange={(e) => setContactos(contactos.map((x, n) => n === i ? { ...x, relacion: e.target.value } : x))}><option value="">Selecciona</option>{RELACIONES.map((r) => <option key={r}>{r}</option>)}</select></label><label><span>Teléfono</span><input value={c.telefono} disabled={!puedeEditar} onChange={(e) => setContactos(contactos.map((x, n) => n === i ? { ...x, telefono: e.target.value } : x))} /></label></div>{puedeEditar && contactos.length > 1 && <button type="button" className="quitar" onClick={() => setContactos(contactos.filter((_, n) => n !== i))}>Eliminar</button>}</div>)}
       </ListaEditable>
-      <ListaEditable titulo="Fechas importantes" actualizado={integrante.actualizado_en} puedeEditar={puedeEditar} onAdd={() => setFechasImportantes([...fechasImportantes, { titulo: "", fecha: "" }])}>
-        {fechasImportantes.map((f, i) => <div className="registro-repetible" key={i}><div className="campos"><label><span>Descripción</span><input value={f.titulo} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, titulo: e.target.value } : x))} /></label><label><span>Fecha</span><input type="date" value={f.fecha} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, fecha: e.target.value } : x))} /></label></div>{puedeEditar && fechasImportantes.length > 1 && <button type="button" className="quitar" onClick={() => setFechasImportantes(fechasImportantes.filter((_, n) => n !== i))}>Eliminar</button>}</div>)}
+      <ListaEditable titulo="Fechas importantes" actualizado={integrante.actualizado_en} puedeEditar={puedeEditar} onAdd={() => setFechasImportantes([...fechasImportantes, { titulo: "", tipo: "completa", valor: "" }])}>
+        <div className="tabla-fechas"><div className="tabla-fechas-cabecera"><span>Descripción</span><span>Tipo</span><span>Fecha o regla</span><span /></div>
+        {fechasImportantes.map((f, i) => <div className="tabla-fechas-fila" key={i}><input aria-label="Descripción" value={f.titulo} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, titulo: e.target.value } : x))} /><select aria-label="Tipo de fecha" value={f.tipo} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, tipo: e.target.value as "completa" | "anual" | "regla", valor: "" } : x))}><option value="completa">Fecha completa</option><option value="anual">Día y mes</option><option value="regla">Regla anual</option></select><input aria-label="Fecha o regla" type={f.tipo === "completa" ? "date" : "text"} placeholder={f.tipo === "anual" ? "Ej. 15/06" : f.tipo === "regla" ? "Ej. tercer domingo de junio" : ""} value={f.valor} disabled={!puedeEditar} onChange={(e) => setFechasImportantes(fechasImportantes.map((x, n) => n === i ? { ...x, valor: e.target.value } : x))} />{puedeEditar && fechasImportantes.length > 1 ? <button type="button" className="quitar" onClick={() => setFechasImportantes(fechasImportantes.filter((_, n) => n !== i))}>Eliminar</button> : <span />}</div>)}</div>
       </ListaEditable>
       {error && <p className="error">{error}</p>}<div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>{puedeEditar ? "Cancelar" : "Cerrar"}</button>{puedeEditar && <button className="primario">Guardar cambios</button>}</div></form>
   </section></div>;
