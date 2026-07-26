@@ -94,6 +94,20 @@ export async function PATCH(request: NextRequest) {
   const puedeEditar = sesion.rol === "administrador" || integrante?.usuario_id === sesion.usuarioId;
   if (!puedeEditar) return NextResponse.json({ error: "No tienes permiso para editar esta ficha" }, { status: 403 });
 
+  if (cuerpo.modo_salud) {
+    const { error } = await supabase.from("tb_salud_perfil").upsert({
+      integrante_id: id,
+      tipo_sangre: cuerpo.tipo_sangre || null,
+      seguro_medico: cuerpo.seguro_medico || null,
+      alergias: cuerpo.alergias || null,
+      enfermedades_relevantes: cuerpo.enfermedades_relevantes || null,
+      medicacion_habitual: cuerpo.medicacion_habitual || null,
+      medico_referencia: cuerpo.medico_referencia || null,
+    }, { onConflict: "integrante_id" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ guardado: true });
+  }
+
   const personales = {
     nombre_completo: cuerpo.nombre_completo || cuerpo.nombre || null,
     dni: cuerpo.dni || null,

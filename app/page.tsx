@@ -1906,6 +1906,7 @@ function ModalFicha({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id: integrante.id,
+        modo_salud: soloSalud,
         ...valores,
         telefono: telefonos.filter(Boolean).join("\n"),
         correo_electronico: correos.filter(Boolean).join("\n"),
@@ -1946,7 +1947,10 @@ function ModalFicha({
         </div>
         <form onSubmit={guardarFicha}>
           {seccionesFicha.map(([titulo, campos]) => (
-            <fieldset key={titulo}>
+            <fieldset
+              key={titulo}
+              disabled={soloSalud && titulo !== "Salud"}
+            >
               <legend>{titulo}</legend>
               <div className="campos">
                 {campos.map(([nombre, etiqueta, tipo]) => (
