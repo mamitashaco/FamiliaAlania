@@ -47,12 +47,21 @@ export async function POST(request: NextRequest) {
     medicamentos: { tabla: "tb_medicamentos", campos: ["nombre", "dosis", "frecuencia", "fecha_inicio", "fecha_fin", "indicaciones"] },
     vacunas: { tabla: "tb_vacunas", campos: ["nombre", "dosis", "fecha_aplicacion", "proxima_fecha", "establecimiento", "lote"] },
     examenes: { tabla: "tb_examenes", campos: ["nombre", "fecha", "resultado_resumen", "proximo_control"] },
-    signos: { tabla: "tb_signos_vitales", campos: ["peso_kg", "talla_cm", "presion_arterial", "temperatura", "glucosa", "saturacion", "pulso", "observaciones"] },
+    signos: { tabla: "tb_signos_vitales", campos: ["registrado_en", "peso_kg", "talla_cm", "presion_arterial", "temperatura", "glucosa", "saturacion", "pulso", "observaciones"] },
   };
   const config = configuracion[cuerpo.tipo];
   if (!config) return NextResponse.json({ error: "Tipo de registro inválido" }, { status: 400 });
   const valores: Record<string, unknown> = { integrante_id: integranteId };
   config.campos.forEach((campo) => { valores[campo] = cuerpo[campo] || null; });
+  if (cuerpo.tipo === "medicamentos" && !valores.fecha_fin && cuerpo.duracion_dias && cuerpo.fecha_inicio) {
+    const fin = new Date(`${cuerpo.fecha_inicio}T00:00:00`); fin.setDate(fin.getDate() + Number(cuerpo.duracion_dias));
+    valores.fecha_fin = fin.toISOString().slice(0, 10);
+  }
+  if (cuerpo.tipo === "vacunas" && !valores.proxima_fecha && cuerpo.proxima_cantidad) {
+    const proxima = new Date(`${cuerpo.fecha_aplicacion || new Date().toISOString().slice(0, 10)}T00:00:00`);
+    cuerpo.proxima_unidad === "semanas" ? proxima.setDate(proxima.getDate() + Number(cuerpo.proxima_cantidad) * 7) : proxima.setMonth(proxima.getMonth() + Number(cuerpo.proxima_cantidad));
+    valores.proxima_fecha = proxima.toISOString().slice(0, 10);
+  }
   const { error } = await supabase.from(config.tabla).insert(valores);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ guardado: true }, { status: 201 });

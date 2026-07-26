@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const supabase = supabaseServidor();
   const { data: integrantes, error } = await supabase
     .from("tb_integrantes")
-    .select("*,tb_informacion_laboral(*),tb_salud_perfil(*),tb_cuentas_financieras(*),tb_contactos_emergencia(*),tb_fechas_importantes(*)")
+    .select("*,tb_informacion_laboral(*),tb_salud_perfil(*),tb_medicamentos(*),tb_cuentas_financieras(*),tb_contactos_emergencia(*),tb_fechas_importantes(*)")
     .order("nombre_completo");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

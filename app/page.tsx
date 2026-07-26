@@ -14,6 +14,7 @@ type Integrante = {
   cuentas: Array<{ banco_principal: string; tipo_cuenta: string; observaciones: string }>;
   contactos: Array<{ nombre: string; relacion: string; telefono: string }>;
   fechas: Array<{ titulo: string; tipo: "completa" | "anual" | "regla"; valor: string }>;
+  medicamentos: Array<{ nombre: string; frecuencia: string; fecha_inicio: string; fecha_fin: string; activo: boolean }>;
 };
 
 const navegacion = [
@@ -121,6 +122,7 @@ export default function Home() {
         medico_referencia: salud.medico_referencia ?? "",
         cuentas: (p.tb_cuentas_financieras ?? []).map((x: Record<string, string>) => ({ banco_principal: x.banco_principal ?? "", tipo_cuenta: x.tipo_cuenta ?? "", observaciones: x.observaciones ?? "" })),
         contactos: (p.tb_contactos_emergencia ?? []).map((x: Record<string, string>) => ({ nombre: x.nombre ?? "", relacion: x.relacion ?? "", telefono: x.telefono ?? "" })),
+        medicamentos: (p.tb_medicamentos ?? []).map((x: Record<string, any>) => ({ nombre: x.nombre ?? "", frecuencia: x.frecuencia ?? "", fecha_inicio: x.fecha_inicio ?? "", fecha_fin: x.fecha_fin ?? "", activo: x.activo !== false })),
         fechas: (p.tb_fechas_importantes ?? []).map((x: Record<string, string>) => {
           const tipo = x.tipo?.startsWith("regla:") ? "regla" : x.tipo === "anual" ? "anual" : "completa";
           const valor = tipo === "regla" ? x.tipo.slice(6) : tipo === "anual" ? `${x.fecha?.slice(8, 10)}/${x.fecha?.slice(5, 7)}` : x.fecha ?? "";
@@ -254,6 +256,8 @@ function Inicio({ personas, onNavigate, onAdd, nombre }: { personas: typeof inte
   const hora = new Date().getHours();
   const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
   const proximas = calcularProximasFechas(personas);
+  const hoyIso = new Date().toISOString().slice(0, 10);
+  const recordatorios = personas.flatMap((p) => p.medicamentos.filter((m) => m.activo && (!m.fecha_fin || m.fecha_fin >= hoyIso)).map((m) => ({ ...m, persona: p.nombre.split(" ")[0] })));
   return <>
     <section className="bienvenida">
       <div><div className="etiqueta">ESPACIO FAMILIAR</div><h1>{saludo}, {nombre}</h1><p>Información familiar centralizada y protegida.</p></div>
@@ -265,6 +269,7 @@ function Inicio({ personas, onNavigate, onAdd, nombre }: { personas: typeof inte
     </section>
     <div className="grilla-inicio una-columna">
       {proximas.length > 0 && <section><div className="cabecera-seccion"><div><h2>Próximas fechas</h2><p>Cumpleaños y fechas familiares</p></div></div><div className="tarjeta lista-fechas">{proximas.map((f) => <article key={`${f.titulo}-${f.fecha.toISOString()}`}><div className="fecha"><strong>{f.fecha.getDate()}</strong><span>{f.fecha.toLocaleDateString("es-PE", { month: "short" }).toUpperCase()}</span></div><div><h3>{f.titulo}</h3><p>{f.detalle}</p></div></article>)}</div></section>}
+      {recordatorios.length > 0 && <section><div className="cabecera-seccion"><div><h2>Recordatorios de medicamentos</h2><p>Tratamientos activos</p></div><button onClick={() => onNavigate("Salud")}>Ver Salud →</button></div><div className="tarjeta lista-personas">{recordatorios.map((m, i) => <button key={`${m.nombre}-${i}`} onClick={() => onNavigate("Salud")}><span className="avatar">Rx</span><span><strong>{m.nombre}</strong><small>{m.persona} · {m.frecuencia || "Frecuencia sin registrar"}{m.fecha_fin ? ` · hasta ${new Date(`${m.fecha_fin}T00:00:00`).toLocaleDateString("es-PE")}` : ""}</small></span><i>›</i></button>)}</div></section>}
       <section>
         <div className="cabecera-seccion"><div><h2>Integrantes</h2><p>{personas.length} miembros registrados</p></div><button onClick={() => onNavigate("Integrantes")}>Ver todos →</button></div>
         <div className="tarjeta lista-personas">{personas.slice(0, 3).map((p) => <button key={p.nombre} onClick={() => onNavigate("Integrantes")}><span className="avatar">{p.iniciales}</span><span><strong>{p.nombre}</strong><small>{p.edad} · {p.lugar}</small></span><i>›</i></button>)}</div>
@@ -291,11 +296,11 @@ function VistaIntegrantes({ buscar, setBuscar, personas, onAdd, onOpen, esAdmini
 }
 
 const CAMPOS_SALUD: Record<string, Array<[string, string, string?]>> = {
-  historial: [["fecha", "Fecha", "date"], ["tipo", "Tipo de atención"], ["diagnostico", "Diagnóstico"], ["tratamiento", "Tratamiento"], ["profesional", "Profesional"], ["establecimiento", "Establecimiento"], ["observaciones", "Observaciones"]],
-  medicamentos: [["nombre", "Medicamento"], ["dosis", "Dosis"], ["frecuencia", "Frecuencia"], ["fecha_inicio", "Fecha de inicio", "date"], ["fecha_fin", "Fecha de fin", "date"], ["indicaciones", "Indicaciones"]],
-  vacunas: [["nombre", "Vacuna"], ["dosis", "Dosis"], ["fecha_aplicacion", "Fecha de aplicación", "date"], ["proxima_fecha", "Próxima dosis", "date"], ["establecimiento", "Establecimiento"], ["lote", "Lote"]],
-  examenes: [["nombre", "Examen"], ["fecha", "Fecha", "date"], ["resultado_resumen", "Resultado"], ["proximo_control", "Próximo control", "date"]],
-  signos: [["peso_kg", "Peso (kg)", "number"], ["talla_cm", "Talla (cm)", "number"], ["presion_arterial", "Presión arterial"], ["temperatura", "Temperatura", "number"], ["glucosa", "Glucosa", "number"], ["saturacion", "Saturación", "number"], ["pulso", "Pulso", "number"], ["observaciones", "Observaciones"]],
+  historial: [["fecha", "Fecha", "date"], ["tipo", "Tipo de atención", "sugerencia"], ["diagnostico", "Diagnóstico", "textarea"], ["tratamiento", "Tratamiento", "textarea"], ["profesional", "Profesional"], ["establecimiento", "Establecimiento"], ["observaciones", "Observaciones", "textarea"]],
+  medicamentos: [["nombre", "Medicamento"], ["dosis", "Dosis"], ["frecuencia", "Frecuencia (ej. cada 8 horas)"], ["fecha_inicio", "Fecha de inicio", "date"], ["duracion_dias", "Duración (días)", "number"], ["fecha_fin", "Fecha de fin calculada o manual", "date"], ["indicaciones", "Indicaciones", "textarea"]],
+  vacunas: [["nombre", "Vacuna"], ["dosis", "Dosis"], ["fecha_aplicacion", "Fecha de aplicación", "date"], ["proxima_fecha", "Próxima dosis (opcional)", "date"], ["proxima_cantidad", "O calcular dentro de", "number"], ["proxima_unidad", "Unidad", "unidad"], ["establecimiento", "Establecimiento"], ["lote", "Lote"]],
+  examenes: [["nombre", "Examen"], ["fecha", "Fecha", "date"], ["resultado_resumen", "Resultado", "textarea"], ["proximo_control", "Próximo control (opcional)", "date"]],
+  signos: [["registrado_en", "Fecha", "date"], ["peso_kg", "Peso (kg)", "number"], ["talla_cm", "Talla (cm)", "number"], ["presion_arterial", "Presión arterial"], ["temperatura", "Temperatura", "number"], ["glucosa", "Glucosa", "number"], ["saturacion", "Saturación", "number"], ["pulso", "Pulso", "number"], ["observaciones", "Observaciones", "textarea"]],
 };
 const TABLAS_SALUD: Record<string, string> = { historial: "tb_historial_medico", medicamentos: "tb_medicamentos", vacunas: "tb_vacunas", examenes: "tb_examenes", signos: "tb_signos_vitales" };
 
@@ -306,6 +311,7 @@ function VistaSalud() {
   const [integranteId, setIntegranteId] = useState("");
   const [pestana, setPestana] = useState("perfil");
   const [avisoSalud, setAvisoSalud] = useState("");
+  const [formularioAbierto, setFormularioAbierto] = useState(false);
   async function cargarSalud() {
     const respuesta = await fetch("/api/salud");
     const json = await respuesta.json();
@@ -325,20 +331,19 @@ function VistaSalud() {
     const respuesta = await fetch("/api/salud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrante_id: integranteId, tipo, ...valores }) });
     const json = await respuesta.json();
     setAvisoSalud(respuesta.ok ? "✓ Guardado" : json.error ?? "No se pudo guardar");
-    if (respuesta.ok) { e.currentTarget.reset(); await cargarSalud(); }
+    if (respuesta.ok) { e.currentTarget.reset(); setFormularioAbierto(false); await cargarSalud(); }
     window.setTimeout(() => setAvisoSalud(""), 2200);
   }
 
   return <>
     <TituloPagina etiqueta="CUIDADO FAMILIAR" titulo="Salud" descripcion="Perfil de salud, historial, medicamentos, vacunas, exámenes y signos." textoBoton="" />
     <div className="selector-integrante"><label>Integrante<select value={integranteId} onChange={(e) => setIntegranteId(e.target.value)}>{datosSalud.map((p) => <option value={p.id} key={p.id}>{p.nombre_completo}</option>)}</select></label>{avisoSalud && <small>{avisoSalud}</small>}</div>
-    <section className="pestanas">{[["perfil", "Perfil de salud"], ["historial", "Historial médico"], ["medicamentos", "Medicamentos"], ["vacunas", "Vacunas"], ["examenes", "Exámenes"], ["signos", "Signos"]].map(([id, nombre]) => <button onClick={() => setPestana(id)} className={pestana === id ? "seleccionada" : ""} key={id}>{nombre}</button>)}</section>
-    {pestana === "perfil" ? <form className="tarjeta formulario-salud" onSubmit={(e) => guardarSalud(e, "perfil")}><div className="campos">
-      {[["tipo_sangre", "Tipo de sangre"], ["seguro_medico", "Seguro médico"], ["alergias", "Alergias"], ["enfermedades_relevantes", "Enfermedades relevantes"], ["medicacion_habitual", "Medicación habitual"], ["medico_referencia", "Médico de referencia"]].map(([campo, etiqueta]) => <label key={campo}><span>{etiqueta}</span><input name={campo} defaultValue={perfil[campo] ?? ""} disabled={!puedeEditar} /></label>)}
-    </div>{puedeEditar && <div className="modal-acciones"><button className="primario">Guardar perfil de salud</button></div>}</form> :
-    <div className="grilla-salud"><form className="tarjeta formulario-salud" onSubmit={(e) => guardarSalud(e, pestana)}><h2>Nuevo registro</h2><div className="campos">{CAMPOS_SALUD[pestana].map(([campo, etiqueta, tipo]) => <label key={campo}><span>{etiqueta}</span><input name={campo} type={tipo ?? "text"} step={tipo === "number" ? "0.01" : undefined} disabled={!puedeEditar} required={["fecha", "nombre"].includes(campo)} /></label>)}</div>{puedeEditar && <div className="modal-acciones"><button className="primario">Agregar</button></div>}</form>
-      <section className="tarjeta registros-salud"><h2>Registros</h2>{registros.length ? registros.map((r: Record<string, any>) => <article key={r.id}><strong>{r.nombre || r.diagnostico || r.tipo || r.presion_arterial || "Registro de salud"}</strong><span>{r.fecha || r.fecha_aplicacion || r.fecha_inicio || (r.registrado_en ? new Date(r.registrado_en).toLocaleDateString("es-PE") : "")}</span><p>{r.resultado_resumen || r.tratamiento || r.indicaciones || r.observaciones || ""}</p></article>) : <div className="estado-vacio"><p>Sin registros todavía.</p></div>}</section>
-    </div>}
+    <section className="pestanas">{[["perfil", "Perfil de salud"], ["historial", "Historial médico"], ["medicamentos", "Medicamentos"], ["vacunas", "Vacunas"], ["examenes", "Exámenes"], ["signos", "Signos"]].map(([id, nombre]) => <button onClick={() => { setPestana(id); setFormularioAbierto(false); }} className={pestana === id ? "seleccionada" : ""} key={id}>{nombre}</button>)}</section>
+    {pestana === "perfil" ? <section className="tarjeta resumen-salud"><div className="cabecera-seccion"><div><h2>Perfil de salud</h2><p>Información compartida con la ficha del integrante</p></div>{puedeEditar && <button onClick={() => setFormularioAbierto(true)}>Editar →</button>}</div><dl>{[["Tipo de sangre", perfil.tipo_sangre], ["Seguro médico", perfil.seguro_medico], ["Alergias", perfil.alergias], ["Enfermedades relevantes", perfil.enfermedades_relevantes], ["Medicación habitual", perfil.medicacion_habitual], ["Médico de referencia", perfil.medico_referencia]].map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v || "Sin registrar"}</dd></div>)}</dl></section> :
+      <section className="tarjeta registros-salud"><div className="cabecera-seccion"><div><h2>Registros</h2><p>{registros.length} registros guardados</p></div>{puedeEditar && <button onClick={() => setFormularioAbierto(true)}>＋ Agregar</button>}</div>{registros.length ? registros.map((r: Record<string, any>) => <article key={r.id}><strong>{r.nombre || r.diagnostico || r.tipo || r.presion_arterial || "Registro de salud"}</strong><span>{r.fecha || r.fecha_aplicacion || r.fecha_inicio || (r.registrado_en ? new Date(r.registrado_en).toLocaleDateString("es-PE") : "")}</span><p>{r.resultado_resumen || r.tratamiento || r.indicaciones || r.observaciones || ""}</p></article>) : <div className="estado-vacio"><p>Sin registros todavía.</p></div>}</section>}
+    {formularioAbierto && <div className="velo"><section className="modal modal-ficha" role="dialog" aria-modal="true" aria-label={pestana === "perfil" ? "Editar perfil de salud" : "Nuevo registro de salud"}><div className="modal-cabecera"><div><div className="etiqueta">SALUD</div><h2>{pestana === "perfil" ? "Editar perfil de salud" : "Nuevo registro"}</h2></div><button className="boton-icono" onClick={() => setFormularioAbierto(false)} aria-label="Cerrar">×</button></div>
+      {pestana === "perfil" ? <form className="formulario-salud" onSubmit={(e) => guardarSalud(e, "perfil")}><div className="campos"><label><span>Tipo de sangre</span><select name="tipo_sangre" defaultValue={perfil.tipo_sangre ?? ""}><option value="">Selecciona</option>{["O+","O-","A+","A-","B+","B-","AB+","AB-","No conoce"].map((x) => <option key={x}>{x}</option>)}</select></label>{[["seguro_medico", "Seguro médico"], ["alergias", "Alergias"], ["enfermedades_relevantes", "Enfermedades relevantes"], ["medicacion_habitual", "Medicación habitual"], ["medico_referencia", "Médico de referencia"]].map(([campo, etiqueta]) => <label key={campo}><span>{etiqueta}</span><input name={campo} defaultValue={perfil[campo] ?? ""} /></label>)}</div><div className="modal-acciones"><button type="button" className="secundario" onClick={() => setFormularioAbierto(false)}>Cerrar</button><button className="primario">Guardar</button></div></form> :
+      <form className="formulario-salud" onSubmit={(e) => guardarSalud(e, pestana)}><div className="campos">{CAMPOS_SALUD[pestana].map(([campo, etiqueta, tipo]) => <label key={campo} className={tipo === "textarea" ? "ancho" : ""}><span>{etiqueta}</span>{tipo === "textarea" ? <textarea name={campo} rows={4} /> : tipo === "unidad" ? <select name={campo} defaultValue="semanas"><option value="semanas">Semanas</option><option value="meses">Meses</option></select> : <input name={campo} type={tipo === "date" || tipo === "number" ? tipo : "text"} list={tipo === "sugerencia" ? "tipos-atencion" : undefined} step={tipo === "number" ? "0.01" : undefined} defaultValue={tipo === "date" && !["fecha_fin", "proxima_fecha", "proximo_control"].includes(campo) ? new Date().toISOString().slice(0, 10) : undefined} required={["fecha", "nombre", "registrado_en"].includes(campo)} />}</label>)}</div><datalist id="tipos-atencion">{Array.from(new Set(datosSalud.flatMap((p) => (p.tb_historial_medico ?? []).map((r: Record<string, string>) => r.tipo).filter(Boolean))).values()).map((x) => <option key={String(x)} value={String(x)} />)}</datalist><div className="modal-acciones"><button type="button" className="secundario" onClick={() => setFormularioAbierto(false)}>Cerrar</button><button className="primario">Guardar registro</button></div></form>}</section></div>}
   </>;
 }
 
