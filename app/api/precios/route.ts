@@ -27,10 +27,22 @@ export async function POST(request: NextRequest) {
 
   const cuerpo = await request.json();
   const descripcion = String(cuerpo.descripcion ?? "").trim();
+  const categoria = String(cuerpo.categoria ?? "").trim();
+  const presentacion = Number(cuerpo.presentacion);
   const tienda = String(cuerpo.tienda ?? "").trim();
+  const fecha = String(cuerpo.fecha ?? "").trim();
   const precio = Number(cuerpo.precio);
-  if (!descripcion || !tienda || !Number.isFinite(precio) || precio <= 0)
-    return NextResponse.json({ error: "Completa producto, tienda y precio" }, { status: 400 });
+  if (
+    !fecha ||
+    !descripcion ||
+    !categoria ||
+    !tienda ||
+    !Number.isFinite(precio) ||
+    precio <= 0 ||
+    !Number.isFinite(presentacion) ||
+    presentacion <= 0
+  )
+    return NextResponse.json({ error: "Completa todos los campos obligatorios" }, { status: 400 });
 
   const supabase = supabaseServidor();
   let { data: producto } = await supabase
@@ -42,8 +54,8 @@ export async function POST(request: NextRequest) {
   if (!producto) {
     const resultado = await supabase.from("tb_productos").insert({
       descripcion,
-      categoria: cuerpo.categoria || null,
-      presentacion: cuerpo.presentacion || null,
+      categoria,
+      presentacion: String(presentacion),
     }).select("id").single();
     if (resultado.error)
       return NextResponse.json({ error: resultado.error.message }, { status: 500 });
@@ -67,8 +79,9 @@ export async function POST(request: NextRequest) {
     producto_id: producto.id,
     tienda_id: tiendaBd.id,
     precio,
-    costo_unitario: cuerpo.costo_unitario ? Number(cuerpo.costo_unitario) : null,
+    costo_unitario: Number((precio / presentacion).toFixed(4)),
     registrado_por: actual.usuarioId,
+    registrado_en: `${fecha}T12:00:00-05:00`,
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ guardado: true }, { status: 201 });

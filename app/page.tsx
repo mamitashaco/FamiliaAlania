@@ -2525,6 +2525,19 @@ function Modal({
         </div>
         <form onSubmit={onSave}>
           <div className="campos">
+            {seccion === "Precios" && (
+              <label>
+                <span>
+                  Fecha <b className="obligatorio">*</b>
+                </span>
+                <input
+                  name="fecha"
+                  required
+                  type="date"
+                  defaultValue={new Date().toLocaleDateString("sv-SE")}
+                />
+              </label>
+            )}
             <label>
               <span>
                 {seccion === "Precios" ? "Descripción del producto" : "Título"}{" "}
@@ -2566,12 +2579,18 @@ function Modal({
                   />
                 </label>
                 <label>
-                  <span>Presentación</span>
-                  <input name="presentacion" placeholder="Ej. Botella 1 L" />
-                </label>
-                <label>
-                  <span>Costo unitario</span>
-                  <input name="costo_unitario" type="number" step="0.01" placeholder="0.00" />
+                  <span>
+                    Presentación <b className="obligatorio">*</b>
+                  </span>
+                  <input
+                    name="presentacion"
+                    required
+                    type="number"
+                    min="0.0001"
+                    step="any"
+                    placeholder="Ej. 6"
+                  />
+                  <small>Ingresa solo la cantidad, sin unidades.</small>
                 </label>
                 <label>
                   <span>
