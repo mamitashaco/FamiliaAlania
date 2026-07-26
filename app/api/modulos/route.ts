@@ -44,19 +44,26 @@ export async function GET(request: NextRequest) {
   let error: { message: string } | null = null;
 
   if (modulo === "Finanzas") {
-    const r = await supabase.from("tb_movimientos_financieros").select("*").order("fecha", { ascending: false });
+    const r = await supabase.from("tb_movimientos_financieros").select("*,tb_integrantes(nombre_completo)").order("fecha", { ascending: false });
     error = r.error; registros = (r.data ?? []).map((x) => ({
       titulo: x.descripcion, detalle: `${x.tipo} · ${x.categoria ?? "Sin categoría"}`,
       meta: new Date(`${x.fecha}T00:00:00`).toLocaleDateString("es-PE"),
       estado: `S/ ${Number(x.monto).toFixed(2)}`,
+      id: x.id, tipo: x.tipo, categoria: x.categoria, descripcion: x.descripcion,
+      monto: Number(x.monto), fecha: x.fecha, observaciones: x.observaciones,
+      usuario: (Array.isArray(x.tb_integrantes) ? x.tb_integrantes[0] : x.tb_integrantes)?.nombre_completo ?? "Usuario",
     }));
   } else if (modulo === "Seguros") {
-    const r = await supabase.from("tb_seguros").select("*").order("fin_vigencia", { ascending: true });
-    error = r.error; registros = (r.data ?? []).map((x) => ({
+    const r = await supabase.from("tb_seguros").select("*,tb_integrantes(nombre_completo)").order("fin_vigencia", { ascending: true });
+    error = r.error; registros = await Promise.all((r.data ?? []).map(async (x) => ({
       titulo: x.tipo, detalle: `${x.aseguradora ?? "Sin aseguradora"} · ${x.numero_poliza ?? "Sin póliza"}`,
       meta: x.fin_vigencia ? `Vence ${new Date(`${x.fin_vigencia}T00:00:00`).toLocaleDateString("es-PE")}` : "Sin vencimiento",
-      estado: x.estado ?? "Activo",
-    }));
+      estado: x.estado ?? "Activo", id: x.id, propio: x.integrante_id === await integranteActual(actual.usuarioId),
+      autor: (Array.isArray(x.tb_integrantes) ? x.tb_integrantes[0] : x.tb_integrantes)?.nombre_completo ?? "Usuario",
+      archivo_url: x.archivo_url,
+      aseguradora: x.aseguradora, numero_poliza: x.numero_poliza, cobertura: x.cobertura,
+      url: x.archivo_url ? (await supabase.storage.from(BUCKET).createSignedUrl(x.archivo_url, 3600)).data?.signedUrl : null,
+    })));
   } else if (modulo === "Viajes, eventos y proyectos") {
     const r = await supabase.from("tb_viajes_eventos").select("*").order("fecha_inicio", { ascending: true });
     error = r.error; registros = (r.data ?? []).map((x) => ({
@@ -72,6 +79,9 @@ export async function GET(request: NextRequest) {
       estado: x.sexo ?? "Sin registrar",
     }));
   } else if (modulo === "Educación") {
+    const { data: integrantes } = await supabase.from("tb_integrantes").select("id,nombre_completo");
+    const nombres = new Map((integrantes ?? []).map((x) => [x.id, x.nombre_completo]));
+    const propioId = await integranteActual(actual.usuarioId);
     const [estudios, cursos] = await Promise.all([
       supabase.from("tb_estudios").select("*").order("fecha_inicio", { ascending: false }),
       supabase.from("tb_cursos_certificados").select("*").order("fecha_emision", { ascending: false }),
@@ -82,11 +92,15 @@ export async function GET(request: NextRequest) {
         titulo: x.grado ?? "Estudio", detalle: x.institucion ?? "Sin institución",
         meta: "Estudios", estado: x.estado ?? "Registrado",
         url: x.archivo_url ? (await supabase.storage.from(BUCKET).createSignedUrl(x.archivo_url, 3600)).data?.signedUrl : null,
+        id: x.id, tabla: "tb_estudios", integrante_id: x.integrante_id,
+        autor: nombres.get(x.integrante_id) ?? "Usuario", propio: x.integrante_id === propioId,
       })),
       ...(cursos.data ?? []).map(async (x) => ({
         titulo: x.nombre, detalle: x.institucion ?? "Sin institución",
         meta: x.codigo_credencial ?? "Cursos y certificados", estado: "Documento",
         url: x.archivo_url ? (await supabase.storage.from(BUCKET).createSignedUrl(x.archivo_url, 3600)).data?.signedUrl : null,
+        id: x.id, tabla: "tb_cursos_certificados", integrante_id: x.integrante_id,
+        autor: nombres.get(x.integrante_id) ?? "Usuario", propio: x.integrante_id === propioId,
       })),
     ]);
   } else if (modulo === "Archivos históricos") {
@@ -118,11 +132,16 @@ export async function POST(request: NextRequest) {
       observaciones: valor("observaciones") || null,
     }));
   } else if (modulo === "Seguros") {
+    const archivo = form.get("archivo");
+    const ruta = archivo instanceof File && archivo.size
+      ? await subirArchivo(archivo, actual.usuarioId)
+      : null;
     ({ error } = await supabase.from("tb_seguros").insert({
       integrante_id: integranteId, tipo: valor("tipo"), aseguradora: valor("aseguradora"),
       numero_poliza: valor("numero_poliza"), inicio_vigencia: valor("fecha_inicio") || null,
       fin_vigencia: valor("fecha_fin") || null, cobertura: valor("cobertura") || null,
-      contacto: valor("contacto") || null, telefono: valor("telefono") || null, estado: "Activo",
+      contacto: valor("contacto") || null, telefono: valor("telefono") || null,
+      archivo_url: ruta, estado: "Activo",
     }));
   } else if (modulo === "Viajes, eventos y proyectos") {
     ({ error } = await supabase.from("tb_viajes_eventos").insert({
@@ -167,4 +186,37 @@ export async function POST(request: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ guardado: true }, { status: 201 });
+}
+
+export async function PATCH(request: NextRequest) {
+  const actual = sesion(request);
+  if (!actual) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const modulo = request.nextUrl.searchParams.get("modulo");
+  const cuerpo = await request.json();
+  const supabase = supabaseServidor();
+  const propioId = await integranteActual(actual.usuarioId);
+  const id = String(cuerpo.id ?? "");
+  if (!id) return NextResponse.json({ error: "Registro inválido" }, { status: 400 });
+
+  if (modulo === "Educación") {
+    const tabla = cuerpo.tabla === "tb_estudios" ? "tb_estudios" : "tb_cursos_certificados";
+    const { data } = await supabase.from(tabla).select("integrante_id").eq("id", id).single();
+    if (actual.rol !== "administrador" && data?.integrante_id !== propioId)
+      return NextResponse.json({ error: "Solo puedes editar tus documentos" }, { status: 403 });
+    const valores = tabla === "tb_estudios"
+      ? { grado: cuerpo.titulo, institucion: cuerpo.institucion }
+      : { nombre: cuerpo.titulo, institucion: cuerpo.institucion };
+    const { error } = await supabase.from(tabla).update(valores).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  } else if (modulo === "Seguros") {
+    const { data } = await supabase.from("tb_seguros").select("integrante_id").eq("id", id).single();
+    if (actual.rol !== "administrador" && data?.integrante_id !== propioId)
+      return NextResponse.json({ error: "Solo puedes editar tus seguros" }, { status: 403 });
+    const { error } = await supabase.from("tb_seguros").update({
+      tipo: cuerpo.titulo, aseguradora: cuerpo.aseguradora,
+      numero_poliza: cuerpo.numero_poliza, cobertura: cuerpo.cobertura,
+    }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ guardado: true });
 }

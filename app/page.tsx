@@ -14,6 +14,7 @@ type Registro = {
   tienda?: string;
   presentacion?: string;
   url?: string;
+  [clave: string]: any;
 };
 type Integrante = {
   id: string;
@@ -580,6 +581,19 @@ export default function Home() {
             }} />
           ) : seccion === "Configuración" ? (
             <VistaConfiguracion onChanged={cargarDatos} />
+          ) : seccion === "Educación" || seccion === "Seguros" ? (
+            <VistaDocumentosModulo
+              titulo={seccion}
+              registros={registrosModulo[seccion] ?? []}
+              onAdd={() => setModal(`Nuevo registro · ${seccion}`)}
+              onReload={() => cargarModulo(seccion)}
+            />
+          ) : seccion === "Finanzas" ? (
+            <VistaFinanzas
+              registros={registrosModulo.Finanzas ?? []}
+              onAdd={() => setModal("Nuevo registro · Finanzas")}
+              onReload={() => cargarModulo("Finanzas")}
+            />
           ) : (
             <VistaModulo
               titulo={seccion}
@@ -612,12 +626,24 @@ export default function Home() {
         />
       )}
       {modal && modal !== "Nuevo integrante" && (
-        <Modal
-          titulo={modal}
-          seccion={seccion}
-          onClose={() => setModal(null)}
-          onSave={guardar}
-        />
+        seccion === "Precios" ? (
+          <ModalPrecios
+            onClose={() => setModal(null)}
+            onSaved={async () => {
+              setModal(null);
+              await cargarPrecios();
+              setAviso("Precios guardados correctamente");
+              window.setTimeout(() => setAviso(""), 2600);
+            }}
+          />
+        ) : (
+          <Modal
+            titulo={modal}
+            seccion={seccion}
+            onClose={() => setModal(null)}
+            onSave={guardar}
+          />
+        )
       )}
       {ficha && (
         <ModalFicha
@@ -1610,6 +1636,187 @@ function VistaProductos({ precios }: { precios: Registro[] }) {
   );
 }
 
+function VistaDocumentosModulo({
+  titulo,
+  registros,
+  onAdd,
+  onReload,
+}: {
+  titulo: string;
+  registros: Registro[];
+  onAdd: () => void;
+  onReload: () => void;
+}) {
+  const [pestana, setPestana] = useState("Todos");
+  const [usuario, setUsuario] = useState("Todos");
+  const [preview, setPreview] = useState<Registro | null>(null);
+  const [editando, setEditando] = useState<Registro | null>(null);
+  const autores = Array.from(new Set(registros.map((x) => x.autor).filter(Boolean)));
+  const visibles = usuario === "Todos" ? registros : registros.filter((x) => x.autor === usuario);
+  async function guardarEdicion(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editando) return;
+    const valores = Object.fromEntries(new FormData(e.currentTarget));
+    await fetch(`/api/modulos?modulo=${encodeURIComponent(titulo)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...editando, ...valores }),
+    });
+    setEditando(null);
+    onReload();
+  }
+  return (
+    <>
+      <TituloPagina
+        etiqueta="GESTIÓN FAMILIAR"
+        titulo={titulo}
+        descripcion={titulo === "Educación" ? "Estudios, cursos, certificados y documentos académicos." : "Pólizas, coberturas, vencimientos y documentos."}
+        onAdd={onAdd}
+        textoBoton="Nuevo registro"
+      />
+      <section className="pestanas">
+        {["Todos", "Documentos"].map((x) => <button key={x} className={pestana === x ? "seleccionada" : ""} onClick={() => setPestana(x)}>{x}</button>)}
+      </section>
+      {pestana === "Todos" && (
+        <>
+          <div className="filtro-usuario">
+            <label>Usuario
+              <select value={usuario} onChange={(e) => setUsuario(e.target.value)}>
+                <option>Todos</option>
+                {autores.map((x) => <option key={x}>{x}</option>)}
+              </select>
+            </label>
+          </div>
+          <section className="tarjeta tabla">
+            <div className="tabla-cabecera"><span>Registro</span><span>Institución / aseguradora</span><span>Usuario</span><span>Acciones</span></div>
+            {visibles.map((r) => <div className="tabla-fila" key={`${r.id}-${r.tabla ?? ""}`}>
+              <span><strong>{r.titulo}</strong><small>{r.meta}</small></span>
+              <span>{r.detalle}</span><span>{r.autor}</span>
+              <span className="acciones-tabla">
+                {r.url && <button onClick={() => setPreview(r)}>Ver</button>}
+                {r.propio && <button onClick={() => setEditando(r)}>Editar</button>}
+              </span>
+            </div>)}
+          </section>
+        </>
+      )}
+      {pestana === "Documentos" && (
+        <section className="grilla-documentos">
+          {registros.filter((x) => x.url).map((r) => (
+            <article className="tarjeta documento-preview" key={`${r.id}-${r.tabla ?? ""}`}>
+              {r.url?.toLowerCase().includes(".pdf") ? (
+                <iframe src={`${r.url}#page=1&toolbar=0`} title={r.titulo} />
+              ) : <img src={r.url} alt="" />}
+              <div><strong>{r.titulo}</strong><small>{r.autor}</small><button onClick={() => setPreview(r)}>Ver</button></div>
+            </article>
+          ))}
+        </section>
+      )}
+      {preview && <div className="velo" onMouseDown={(e) => e.target === e.currentTarget && setPreview(null)}>
+        <section className="modal visor-documento">
+          <div className="modal-cabecera"><h2>{preview.titulo}</h2><button className="boton-icono" onClick={() => setPreview(null)}>×</button></div>
+          {preview.url?.toLowerCase().includes(".pdf") ? <iframe src={preview.url} title={preview.titulo} /> : <img src={preview.url} alt={preview.titulo} />}
+        </section>
+      </div>}
+      {editando && <div className="velo">
+        <section className="modal modal-corta">
+          <div className="modal-cabecera"><h2>Editar registro</h2><button className="boton-icono" onClick={() => setEditando(null)}>×</button></div>
+          <form onSubmit={guardarEdicion}><div className="campos">
+            <Campo nombre="titulo" etiqueta="Título" valorInicial={editando.titulo} obligatorio ancho />
+            <Campo nombre={titulo === "Educación" ? "institucion" : "aseguradora"} valorInicial={titulo === "Educación" ? editando.detalle : editando.aseguradora} etiqueta={titulo === "Educación" ? "Institución" : "Aseguradora"} obligatorio ancho />
+            {titulo === "Seguros" && <><Campo nombre="numero_poliza" valorInicial={editando.numero_poliza} etiqueta="Número de póliza" /><Campo nombre="cobertura" valorInicial={editando.cobertura} etiqueta="Cobertura" /></>}
+          </div><div className="modal-acciones"><button type="button" className="secundario" onClick={() => setEditando(null)}>Cancelar</button><button className="primario">Guardar</button></div></form>
+        </section>
+      </div>}
+    </>
+  );
+}
+
+type FilaFinanza = { fecha: string; categoria: string; descripcion: string; monto: string; observaciones: string };
+const categoriasIngresoIniciales = ["Sueldo", "Venta", "Bonificación", "Otros ingresos"];
+const categoriasEgresoIniciales = ["Alimentación", "Salud", "Educación", "Servicios", "Transporte", "Otros egresos"];
+
+function GraficoResumenFinanzas({ registros, tipo }: { registros: Registro[]; tipo: "barras" | "linea" }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = canvas.current; if (!c) return;
+    const ctx = c.getContext("2d"); if (!ctx) return;
+    const w = c.clientWidth || 600, h = 220; c.width = w; c.height = h; ctx.clearRect(0, 0, w, h);
+    const ingresos = Array(12).fill(0), egresos = Array(12).fill(0);
+    registros.forEach((r) => { const m = new Date(`${r.fecha}T00:00:00`).getMonth(); (r.tipo === "ingreso" ? ingresos : egresos)[m] += Number(r.monto); });
+    const ahorro = ingresos.map((x, i) => x - egresos[i]);
+    const max = Math.max(1, ...ingresos, ...egresos, ...ahorro.map(Math.abs));
+    ctx.strokeStyle = "#94a3b8"; ctx.beginPath(); ctx.moveTo(38, 12); ctx.lineTo(38, 180); ctx.lineTo(w - 8, 180); ctx.stroke();
+    if (tipo === "barras") {
+      const bw = Math.max(3, (w - 60) / 30);
+      ingresos.forEach((v, i) => { const x = 48 + i * (w - 65) / 12; ctx.fillStyle = "#16a34a"; ctx.fillRect(x, 180 - v / max * 150, bw, v / max * 150); ctx.fillStyle = "#dc2626"; ctx.fillRect(x + bw + 2, 180 - egresos[i] / max * 150, bw, egresos[i] / max * 150); });
+    } else {
+      ctx.beginPath(); ahorro.forEach((v, i) => { const x = 48 + i * (w - 65) / 11, y = 95 - v / max * 75; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 3; ctx.stroke();
+    }
+    ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].forEach((m, i) => ctx.fillText(m, 42 + i * (w - 65) / 12, 202));
+  }, [registros, tipo]);
+  return <canvas ref={canvas} className="canvas-finanzas" aria-label={tipo === "barras" ? "Ingresos versus egresos por mes" : "Ahorro por mes"} />;
+}
+
+function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; onAdd: () => void; onReload: () => void }) {
+  const [pestana, setPestana] = useState("Resumen");
+  const anios = Array.from(new Set(registros.map((x) => String(x.fecha ?? "").slice(0, 4)).filter(Boolean)));
+  const [anio, setAnio] = useState(String(new Date().getFullYear()));
+  const [categoriasIngreso, setCategoriasIngreso] = useState(categoriasIngresoIniciales);
+  const [categoriasEgreso, setCategoriasEgreso] = useState(categoriasEgresoIniciales);
+  const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
+  const filtrados = registros.filter((x) => String(x.fecha).startsWith(anio));
+  const gastosCategoria = Array.from(
+    filtrados
+      .filter((x) => x.tipo === "gasto")
+      .reduce((mapa, x) => mapa.set(x.categoria || "Sin categoría", (mapa.get(x.categoria || "Sin categoría") ?? 0) + Number(x.monto)), new Map<string, number>()),
+  );
+  const totalGastos = gastosCategoria.reduce((suma, [, monto]) => suma + monto, 0);
+  const coloresPastel = ["#15803d", "#22c55e", "#86efac", "#f59e0b", "#3b82f6", "#db2777"];
+  let acumuladoPastel = 0;
+  const fondoPastel = totalGastos
+    ? `conic-gradient(${gastosCategoria.map(([, monto], i) => {
+        const inicio = acumuladoPastel;
+        acumuladoPastel += (monto / totalGastos) * 100;
+        return `${coloresPastel[i % coloresPastel.length]} ${inicio}% ${acumuladoPastel}%`;
+      }).join(",")})`
+    : "conic-gradient(var(--line) 0 100%)";
+  const tipo = pestana === "Ingresos" ? "ingreso" : "gasto";
+  const categorias = tipo === "ingreso" ? categoriasIngreso : categoriasEgreso;
+  async function guardarFilas() {
+    for (const fila of filas.filter((x) => x.categoria && x.descripcion && x.monto)) {
+      const f = new FormData(); Object.entries({ ...fila, tipo }).forEach(([k, v]) => f.set(k, v));
+      await fetch("/api/modulos?modulo=Finanzas", { method: "POST", body: f });
+    }
+    setFilas([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]); onReload();
+  }
+  return <>
+    <TituloPagina etiqueta="GESTIÓN FAMILIAR" titulo="Finanzas" descripcion="Ingresos, egresos, ahorro y categorías familiares." onAdd={onAdd} textoBoton="Nuevo registro" />
+    <section className="pestanas">{["Resumen","Ingresos","Egresos","Categorías"].map((x) => <button key={x} className={pestana === x ? "seleccionada" : ""} onClick={() => setPestana(x)}>{x}</button>)}</section>
+    {pestana === "Resumen" && <>
+      <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label></div>
+      <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><GraficoResumenFinanzas registros={filtrados} tipo="barras" /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><GraficoResumenFinanzas registros={filtrados} tipo="linea" /></section></div>
+      <section className="tarjeta grafico-finanza pastel-finanzas"><h2>Distribución por categoría</h2><div className="pastel" style={{ background: fondoPastel }} /><div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: S/{monto.toFixed(2)}</span>)}</div></section>
+    </>}
+    {(pestana === "Ingresos" || pestana === "Egresos") && <>
+      <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
+      <div className="tarjeta tabla-editor-finanzas"><div className="fila-finanza cabecera"><b>Fecha</b><b>Categoría</b><b>Detalle</b><b>Importe</b><b>Observación</b><b>Usuario</b></div>
+        {filas.map((f, i) => <div className="fila-finanza" key={i}>
+          <input type="date" value={f.fecha} onChange={(e) => setFilas(filas.map((x,n)=>n===i?{...x,fecha:e.target.value}:x))} />
+          <select value={f.categoria} onChange={(e) => setFilas(filas.map((x,n)=>n===i?{...x,categoria:e.target.value,fecha:x.fecha||new Date().toLocaleDateString("sv-SE")}:x))}><option value="">Selecciona</option>{categorias.map((x)=><option key={x}>{x}</option>)}</select>
+          <input value={f.descripcion} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,descripcion:e.target.value}:x))}/><input type="number" step="0.01" value={f.monto} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,monto:e.target.value}:x))}/><input value={f.observaciones} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,observaciones:e.target.value}:x))}/><span>Usuario actual</span>
+        </div>)}
+        {registros.filter((x)=>x.tipo===tipo).map((r)=><div className="fila-finanza guardada" key={r.id}><span>{new Date(`${r.fecha}T00:00:00`).toLocaleDateString("es-PE")}</span><span>{r.categoria}</span><span>{r.descripcion}</span><span>S/{Number(r.monto).toFixed(2)}</span><span>{r.observaciones}</span><span>{r.usuario}</span></div>)}
+      </div>
+    </>}
+    {pestana === "Categorías" && <div className="grilla-categorias"><ListaCategorias titulo="Ingresos" categorias={categoriasIngreso} setCategorias={setCategoriasIngreso}/><ListaCategorias titulo="Egresos" categorias={categoriasEgreso} setCategorias={setCategoriasEgreso}/></div>}
+  </>;
+}
+
+function ListaCategorias({ titulo, categorias, setCategorias }: { titulo:string; categorias:string[]; setCategorias:(x:string[])=>void }) {
+  const [nueva,setNueva]=useState("");
+  return <section className="tarjeta lista-categorias"><h2>{titulo}</h2>{categorias.map((x)=><div key={x}>{x}<button onClick={()=>setCategorias(categorias.filter((c)=>c!==x))}>×</button></div>)}<form onSubmit={(e)=>{e.preventDefault();if(nueva){setCategorias([...categorias,nueva]);setNueva("");}}}><input value={nueva} onChange={(e)=>setNueva(e.target.value)} placeholder="Nueva categoría"/><button className="secundario">Agregar</button></form></section>;
+}
+
 function VistaModulo({
   titulo,
   registros,
@@ -1676,7 +1883,7 @@ function VistaModulo({
           : titulo === "Finanzas"
             ? ["Resumen", "Ingresos", "Gastos", "Reportes"]
             : titulo === "Precios"
-              ? ["Todos", "Producto", "Documentos"]
+              ? ["Todos", "Producto"]
               : ["Todos", "Próximos", "Documentos"]
         ).map((x) => (
           <button
@@ -2737,12 +2944,14 @@ function Campo({
   tipo = "text",
   obligatorio = false,
   ancho = false,
+  valorInicial,
 }: {
   nombre: string;
   etiqueta: string;
   tipo?: string;
   obligatorio?: boolean;
   ancho?: boolean;
+  valorInicial?: string;
 }) {
   return (
     <label className={ancho ? "ancho" : ""}>
@@ -2754,7 +2963,7 @@ function Campo({
         type={tipo}
         required={obligatorio}
         step={tipo === "number" ? "0.01" : undefined}
-        defaultValue={tipo === "date" && nombre === "fecha" ? new Date().toLocaleDateString("sv-SE") : undefined}
+        defaultValue={valorInicial ?? (tipo === "date" && nombre === "fecha" ? new Date().toLocaleDateString("sv-SE") : undefined)}
         accept={tipo === "file" ? "image/*,.pdf,.doc,.docx" : undefined}
       />
     </label>
@@ -2782,6 +2991,35 @@ function CampoSelect({
       </select>
     </label>
   );
+}
+
+type FilaPrecio = { fecha:string; categoria:string; descripcion:string; presentacion:string; precio:string; tienda:string };
+function ModalPrecios({ onClose, onSaved }: { onClose:()=>void; onSaved:()=>void }) {
+  const nuevaFila = (): FilaPrecio => ({ fecha:new Date().toLocaleDateString("sv-SE"), categoria:"", descripcion:"", presentacion:"", precio:"", tienda:"" });
+  const [filas,setFilas]=useState<FilaPrecio[]>([nuevaFila()]);
+  const [error,setError]=useState("");
+  async function guardarPrecios() {
+    for (const fila of filas) {
+      if (!fila.fecha || !fila.categoria || !fila.descripcion || !fila.presentacion || !fila.precio || !fila.tienda) {
+        setError("Completa todos los campos obligatorios"); return;
+      }
+      const respuesta=await fetch("/api/precios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(fila)});
+      if(!respuesta.ok){const json=await respuesta.json();setError(json.error??"No se pudo guardar");return;}
+    }
+    onSaved();
+  }
+  const cambiar=(i:number,campo:keyof FilaPrecio,valor:string)=>setFilas(filas.map((x,n)=>n===i?{...x,[campo]:valor}:x));
+  return <div className="velo"><section className="modal modal-precios">
+    <div className="modal-cabecera"><div><div className="etiqueta">NUEVO REGISTRO · PRECIOS</div><h2>Agregar precios</h2></div><button className="boton-icono" onClick={onClose}>×</button></div>
+    <div className="editor-precios">
+      <div className="acciones-editor"><button className="secundario" onClick={()=>setFilas([...filas,nuevaFila()])}>+ Agregar fila</button><button className="primario" onClick={guardarPrecios}>Guardar registro</button></div>
+      <div className="tabla-filas-precio"><div className="fila-precio cabecera"><b>Fecha</b><b>Categoría</b><b>Producto</b><b>Presentación</b><b>Precio</b><b>Tienda</b></div>
+      {filas.map((f,i)=><div className="fila-precio" key={i}>
+        <input type="date" value={f.fecha} onChange={(e)=>cambiar(i,"fecha",e.target.value)}/><input value={f.categoria} onChange={(e)=>cambiar(i,"categoria",e.target.value)}/><input value={f.descripcion} onChange={(e)=>cambiar(i,"descripcion",e.target.value)}/><input value={f.presentacion} onChange={(e)=>cambiar(i,"presentacion",e.target.value)}/><input type="number" step="0.01" value={f.precio} onChange={(e)=>cambiar(i,"precio",e.target.value)}/><input value={f.tienda} onChange={(e)=>cambiar(i,"tienda",e.target.value)}/>
+      </div>)}</div>
+      {error&&<p className="error-modal">{error}</p>}
+    </div>
+  </section></div>;
 }
 
 function Modal({
@@ -2905,6 +3143,7 @@ function Modal({
               <Campo nombre="fecha_fin" etiqueta="Fin de vigencia" tipo="date" />
               <Campo nombre="telefono" etiqueta="Teléfono" />
               <Campo nombre="cobertura" etiqueta="Cobertura" ancho />
+              <Campo nombre="archivo" etiqueta="Documento de la póliza" tipo="file" ancho />
             </>}
             {seccion === "Viajes, eventos y proyectos" && <>
               <Campo nombre="titulo" etiqueta="Título" obligatorio ancho />
