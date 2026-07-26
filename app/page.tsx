@@ -191,6 +191,7 @@ export default function Home() {
   const [modal, setModal] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
   const [integrantesBd, setIntegrantesBd] = useState<Integrante[]>([]);
+  const [precios, setPrecios] = useState<Registro[]>([]);
   const [usuarioId, setUsuarioId] = useState("");
   const [rolSesion, setRolSesion] = useState<"administrador" | "integrante">(
     "integrante",
@@ -289,6 +290,22 @@ export default function Home() {
     );
   }
 
+  async function cargarPrecios() {
+    const respuesta = await fetch("/api/precios");
+    if (!respuesta.ok) return;
+    const json = await respuesta.json();
+    setPrecios((json.precios ?? []).map((registro: Record<string, any>) => {
+      const producto = relacionUnica(registro.tb_productos);
+      const tienda = relacionUnica(registro.tb_tiendas);
+      return {
+        titulo: producto.descripcion ?? "Producto",
+        detalle: [producto.categoria, producto.presentacion].filter(Boolean).join(" · ") || "Sin categoría",
+        meta: `${tienda.nombre ?? "Tienda"} · ${new Date(registro.registrado_en).toLocaleDateString("es-PE")}`,
+        estado: `S/ ${Number(registro.precio).toFixed(2)}`,
+      };
+    }));
+  }
+
   useEffect(() => {
     fetch("/api/sesion")
       .then((r) => r.json())
@@ -339,8 +356,22 @@ export default function Home() {
     setUsuarioId("");
   }
 
-  function guardar(e: FormEvent<HTMLFormElement>) {
+  async function guardar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (seccion === "Precios") {
+      const valores = Object.fromEntries(new FormData(e.currentTarget));
+      const respuesta = await fetch("/api/precios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(valores),
+      });
+      const json = await respuesta.json();
+      if (!respuesta.ok) {
+        setAviso(json.error ?? "No se pudo guardar el precio");
+        return;
+      }
+      await cargarPrecios();
+    }
     setModal(null);
     setAviso("Registro guardado correctamente");
     window.setTimeout(() => setAviso(""), 2600);
@@ -420,7 +451,10 @@ export default function Home() {
               <button
                 key={nombre}
                 className={seccion === nombre ? "activo" : ""}
-                onClick={() => setSeccion(nombre)}
+                onClick={() => {
+                  setSeccion(nombre);
+                  if (nombre === "Precios") cargarPrecios();
+                }}
               >
                 <IconoNav size={15} strokeWidth={1.8} /> {nombre}
                 {nombre === "Salud" && <b>2</b>}
@@ -506,7 +540,7 @@ export default function Home() {
           ) : (
             <VistaModulo
               titulo={seccion}
-              registros={datos[seccion] ?? []}
+              registros={seccion === "Precios" ? precios : (datos[seccion] ?? [])}
               onAdd={() => setModal(`Nuevo registro · ${seccion}`)}
             />
           )}
@@ -1420,6 +1454,7 @@ function VistaModulo({
   registros: Registro[];
   onAdd: () => void;
 }) {
+  const [pestanaActiva, setPestanaActiva] = useState("Todos");
   const descripciones: Record<string, string> = {
     Salud:
       "Historial médico, medicamentos, vacunas, exámenes y signos vitales.",
@@ -1454,8 +1489,12 @@ function VistaModulo({
           : titulo === "Finanzas"
             ? ["Resumen", "Ingresos", "Gastos", "Reportes"]
             : ["Todos", "Próximos", "Documentos"]
-        ).map((x, i) => (
-          <button className={i === 0 ? "seleccionada" : ""} key={x}>
+        ).map((x) => (
+          <button
+            className={pestanaActiva === x ? "seleccionada" : ""}
+            key={x}
+            onClick={() => setPestanaActiva(x)}
+          >
             {x}
           </button>
         ))}
@@ -1475,7 +1514,7 @@ function VistaModulo({
           </div>
         </section>
       )}
-      {registros.length ? (
+      {pestanaActiva === "Todos" && registros.length ? (
         <section className="tarjeta tabla">
           <div className="tabla-cabecera">
             <span>Registro</span>
@@ -1498,8 +1537,18 @@ function VistaModulo({
         </section>
       ) : (
         <section className="tarjeta estado-vacio">
-          <h2>Sin registros</h2>
-          <p>Los datos que agregues aparecerán aquí.</p>
+          <h2>
+            {pestanaActiva === "Todos"
+              ? "Sin registros"
+              : pestanaActiva === "Próximos"
+                ? "Sin registros próximos"
+                : "Sin documentos"}
+          </h2>
+          <p>
+            {pestanaActiva === "Todos"
+              ? "Los datos que agregues aparecerán aquí."
+              : `Los elementos de ${pestanaActiva.toLowerCase()} aparecerán aquí.`}
+          </p>
         </section>
       )}
     </>
@@ -2482,6 +2531,7 @@ function Modal({
                 <b className="obligatorio">*</b>
               </span>
               <input
+                name={seccion === "Precios" ? "descripcion" : "titulo"}
                 required
                 placeholder={
                   seccion === "Precios"
@@ -2495,7 +2545,11 @@ function Modal({
                 {seccion === "Precios" ? "Categoría" : "Fecha"}{" "}
                 <b className="obligatorio">*</b>
               </span>
-              <input required type={seccion === "Precios" ? "text" : "date"} />
+              <input
+                name={seccion === "Precios" ? "categoria" : "fecha"}
+                required
+                type={seccion === "Precios" ? "text" : "date"}
+              />
             </label>
             {seccion === "Precios" && (
               <>
@@ -2504,6 +2558,7 @@ function Modal({
                     Precio (S/) <b className="obligatorio">*</b>
                   </span>
                   <input
+                    name="precio"
                     required
                     type="number"
                     step="0.01"
@@ -2512,17 +2567,17 @@ function Modal({
                 </label>
                 <label>
                   <span>Presentación</span>
-                  <input placeholder="Ej. Botella 1 L" />
+                  <input name="presentacion" placeholder="Ej. Botella 1 L" />
                 </label>
                 <label>
                   <span>Costo unitario</span>
-                  <input type="number" step="0.01" placeholder="0.00" />
+                  <input name="costo_unitario" type="number" step="0.01" placeholder="0.00" />
                 </label>
                 <label>
                   <span>
                     Tienda <b className="obligatorio">*</b>
                   </span>
-                  <input required placeholder="Nombre de la tienda" />
+                  <input name="tienda" required placeholder="Nombre de la tienda" />
                 </label>
               </>
             )}
