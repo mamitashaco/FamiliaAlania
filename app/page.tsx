@@ -70,7 +70,7 @@ type Integrante = {
 const navegacion = [
   ["Inicio", HomeIcon], ["Integrantes", Users], ["Salud", HeartPulse], ["Finanzas", WalletCards],
   ["Precios", ShoppingBasket], ["Educación", GraduationCap], ["Seguros", ShieldCheck],
-  ["Viajes, eventos y proyectos", Plane], ["Mascotas", PawPrint], ["Archivos históricos", Archive],
+  ["Proyectos y eventos", Plane], ["Mascotas", PawPrint], ["Archivos históricos", Archive],
 ] as const;
 
 const integrantes: Integrante[] = [];
@@ -593,6 +593,12 @@ export default function Home() {
               registros={registrosModulo.Finanzas ?? []}
               onAdd={() => setModal("Nuevo registro · Finanzas")}
               onReload={() => cargarModulo("Finanzas")}
+            />
+          ) : seccion === "Proyectos y eventos" ? (
+            <VistaProyectosEventos
+              registros={registrosModulo["Proyectos y eventos"] ?? []}
+              onAdd={() => setModal("Nuevo registro · Proyectos y eventos")}
+              onReload={() => cargarModulo("Proyectos y eventos")}
             />
           ) : (
             <VistaModulo
@@ -1817,6 +1823,41 @@ function ListaCategorias({ titulo, categorias, setCategorias }: { titulo:string;
   return <section className="tarjeta lista-categorias"><h2>{titulo}</h2>{categorias.map((x)=><div key={x}>{x}<button onClick={()=>setCategorias(categorias.filter((c)=>c!==x))}>×</button></div>)}<form onSubmit={(e)=>{e.preventDefault();if(nueva){setCategorias([...categorias,nueva]);setNueva("");}}}><input value={nueva} onChange={(e)=>setNueva(e.target.value)} placeholder="Nueva categoría"/><button className="secundario">Agregar</button></form></section>;
 }
 
+function VistaProyectosEventos({ registros, onAdd, onReload }: { registros:Registro[]; onAdd:()=>void; onReload:()=>void }) {
+  const [editando,setEditando]=useState<Registro|null>(null);
+  const [participando,setParticipando]=useState<Registro|null>(null);
+  async function actualizar(cuerpo:Record<string,unknown>) {
+    const respuesta=await fetch("/api/modulos?modulo=Proyectos%20y%20eventos",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(cuerpo)});
+    if(respuesta.ok){setEditando(null);onReload();}
+  }
+  async function aportar(e:FormEvent<HTMLFormElement>) {
+    e.preventDefault(); if(!participando)return;
+    const form=new FormData(e.currentTarget); form.set("accion","participar"); form.set("proyecto_id",participando.id);
+    const respuesta=await fetch("/api/modulos?modulo=Proyectos%20y%20eventos",{method:"POST",body:form});
+    if(respuesta.ok){setParticipando(null);onReload();}
+  }
+  return <>
+    <TituloPagina etiqueta="PLANIFICACIÓN FAMILIAR" titulo="Proyectos y eventos" descripcion="Organiza actividades, metas financieras y compromisos familiares." onAdd={onAdd} textoBoton="＋ Nuevo registro"/>
+    <div className="grilla-proyectos">{registros.map((r)=>{
+      const meta=Number(r.presupuesto)||0;
+      const comprometido=(r.compromisos??[]).reduce((s:number,x:Record<string,any>)=>s+Number(x.monto_comprometido||0),0);
+      const abonado=(r.compromisos??[]).reduce((s:number,x:Record<string,any>)=>s+Number(x.monto_abonado||0),0);
+      const porcentaje=meta?Math.min(100,abonado/meta*100):0;
+      return <article className="tarjeta proyecto-card" key={r.id}>
+        <div className="proyecto-arriba"><div><span className="etiqueta">{r.tipo||"EVENTO"}</span><h2>{r.titulo}</h2><p>{r.fecha_inicio?new Date(r.fecha_inicio).toLocaleString("es-PE"):"Sin inicio"} · {r.autor}</p></div><b className="insignia">{r.estado}</b></div>
+        {r.descripcion&&<p>{r.descripcion}</p>}
+        <div className="meta-proyecto"><div><span>Meta financiera</span><b>S/{meta.toFixed(2)}</b></div><div><span>Comprometido</span><b>S/{comprometido.toFixed(2)}</b></div><div><span>Abonado</span><b>S/{abonado.toFixed(2)}</b></div></div>
+        <div className="barra-meta"><i style={{width:`${porcentaje}%`}}/></div>
+        <div className="compromisos-proyecto">{(r.compromisos??[]).map((x:Record<string,any>)=><div key={x.id}><strong>{x.usuario}</strong><span>{x.actividad||x.comentario||`Aporte S/${Number(x.monto_comprometido).toFixed(2)}`}</span></div>)}</div>
+        <div className="ficha-acciones"><button className="secundario" onClick={()=>setParticipando(r)}>Sumarme / aportar</button>{r.propio&&<><button className="secundario" onClick={()=>setEditando(r)}>Editar</button>{r.estado!=="Cerrado"&&<button className="primario" onClick={()=>actualizar({id:r.id,cerrar:true})}>Cerrar proyecto</button>}</>}</div>
+      </article>;
+    })}</div>
+    {!registros.length&&<section className="tarjeta estado-vacio"><h2>Sin proyectos o eventos</h2><p>Crea el primero para organizarlo con la familia.</p></section>}
+    {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar proyecto o evento</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={(e)=>{e.preventDefault();actualizar({id:editando.id,...Object.fromEntries(new FormData(e.currentTarget))});}}><div className="campos"><Campo nombre="titulo" etiqueta="Título" valorInicial={editando.titulo} obligatorio ancho/><CampoSelect nombre="tipo" etiqueta="Evento" opciones={["Proyecto","Evento","Actividad"]} valorInicial={editando.tipo} obligatorio/><Campo nombre="fecha_inicio" etiqueta="Inicio" tipo="datetime-local" valorInicial={String(editando.fecha_inicio??"").slice(0,16)}/><Campo nombre="lugar" etiqueta="Lugar" valorInicial={editando.lugar}/><Campo nombre="presupuesto" etiqueta="Meta financiera" tipo="number" valorInicial={String(editando.presupuesto||"")}/><Campo nombre="descripcion" etiqueta="Descripción" valorInicial={editando.descripcion} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
+    {participando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><div><span className="etiqueta">PARTICIPAR</span><h2>{participando.titulo}</h2></div><button className="boton-icono" onClick={()=>setParticipando(null)}>×</button></div><form onSubmit={aportar}><div className="campos"><Campo nombre="monto" etiqueta="Monto comprometido" tipo="number"/><Campo nombre="abonado" etiqueta="Monto abonado" tipo="number"/><Campo nombre="actividad" etiqueta="Actividad que realizaré" ancho/><Campo nombre="comentario" etiqueta="Comentario" ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setParticipando(null)}>Cancelar</button><button className="primario">Confirmar participación</button></div></form></section></div>}
+  </>;
+}
+
 function VistaModulo({
   titulo,
   registros,
@@ -1841,7 +1882,9 @@ function VistaModulo({
         )
       : registros;
   useEffect(() => {
-    setPestanaActiva(titulo === "Finanzas" ? "Resumen" : "Todos");
+    setPestanaActiva(
+      titulo === "Finanzas" ? "Resumen" : titulo === "Precios" ? "Registros" : "Todos",
+    );
   }, [titulo]);
   const registrosPestana =
     titulo === "Finanzas" && pestanaActiva === "Ingresos"
@@ -1856,7 +1899,7 @@ function VistaModulo({
     Precios: "Compara tiendas y consulta el historial de precios por producto.",
     Educación: "Estudios, cursos, certificados y documentos académicos.",
     Seguros: "Pólizas, coberturas, vencimientos y contactos de asistencia.",
-    "Viajes, eventos y proyectos":
+    "Proyectos y eventos":
       "Itinerarios, participantes, reservas, presupuestos y fechas.",
     Mascotas: "Información e historial veterinario de cada mascota.",
     "Archivos históricos": "Documentos, fotografías y recuerdos de la familia.",
@@ -1883,7 +1926,7 @@ function VistaModulo({
           : titulo === "Finanzas"
             ? ["Resumen", "Ingresos", "Gastos", "Reportes"]
             : titulo === "Precios"
-              ? ["Todos", "Producto"]
+              ? ["Registros", "Producto"]
               : ["Todos", "Próximos", "Documentos"]
         ).map((x) => (
           <button
@@ -1920,7 +1963,17 @@ function VistaModulo({
       {titulo === "Precios" && pestanaActiva === "Producto" && (
         <VistaProductos precios={registrosVisibles} />
       )}
-      {(pestanaActiva === "Todos" || pestanaActiva === "Resumen" || pestanaActiva === "Ingresos" || pestanaActiva === "Gastos") && registrosPestana.length ? (
+      {titulo === "Precios" && pestanaActiva === "Registros" && registrosVisibles.length > 0 && (
+        <section className="tarjeta tabla-precios-registros">
+          <div className="fila-registro-precio cabecera"><b>Fecha</b><b>Categoría</b><b>Producto</b><b>Presentación</b><b>Precio</b><b>Tienda</b></div>
+          {registrosVisibles.map((r, i) => <div className="fila-registro-precio" key={`${r.titulo}-${r.fecha}-${i}`}>
+            <span>{r.fecha ? new Date(r.fecha).toLocaleDateString("es-PE", { day:"2-digit", month:"2-digit" }) : "—"}</span>
+            <span>{r.estado}</span><strong>{r.titulo}</strong><span>{r.presentacion}</span>
+            <span>S/{Number(r.precio).toFixed(2)}</span><span>{r.tienda}</span>
+          </div>)}
+        </section>
+      )}
+      {titulo !== "Precios" && (pestanaActiva === "Todos" || pestanaActiva === "Resumen" || pestanaActiva === "Ingresos" || pestanaActiva === "Gastos") && registrosPestana.length ? (
         <section className="tarjeta tabla">
           <div className="tabla-cabecera">
             <span>{titulo === "Precios" ? "Descripción de producto" : "Registro"}</span>
@@ -1948,7 +2001,7 @@ function VistaModulo({
             </button>
           ))}
         </section>
-      ) : (
+      ) : titulo !== "Precios" ? (
         <section className="tarjeta estado-vacio">
           <h2>
             {pestanaActiva === "Todos"
@@ -1963,7 +2016,7 @@ function VistaModulo({
               : `Los elementos de ${pestanaActiva.toLowerCase()} aparecerán aquí.`}
           </p>
         </section>
-      )}
+      ) : null}
     </>
   );
 }
@@ -2975,18 +3028,20 @@ function CampoSelect({
   etiqueta,
   opciones,
   obligatorio = false,
+  valorInicial,
 }: {
   nombre: string;
   etiqueta: string;
   opciones: string[];
   obligatorio?: boolean;
+  valorInicial?: string;
 }) {
   return (
     <label>
       <span>
         {etiqueta} {obligatorio && <b className="obligatorio">*</b>}
       </span>
-      <select name={nombre} required={obligatorio}>
+      <select name={nombre} required={obligatorio} defaultValue={valorInicial}>
         {opciones.map((opcion) => <option key={opcion}>{opcion}</option>)}
       </select>
     </label>
@@ -3145,12 +3200,11 @@ function Modal({
               <Campo nombre="cobertura" etiqueta="Cobertura" ancho />
               <Campo nombre="archivo" etiqueta="Documento de la póliza" tipo="file" ancho />
             </>}
-            {seccion === "Viajes, eventos y proyectos" && <>
+            {seccion === "Proyectos y eventos" && <>
               <Campo nombre="titulo" etiqueta="Título" obligatorio ancho />
-              <CampoSelect nombre="tipo" etiqueta="Tipo" opciones={["Viaje", "Evento", "Proyecto de mejora"]} obligatorio />
+              <CampoSelect nombre="tipo" etiqueta="Evento" opciones={["Proyecto", "Evento", "Actividad"]} obligatorio />
               <Campo nombre="lugar" etiqueta="Lugar" />
               <Campo nombre="fecha_inicio" etiqueta="Inicio" tipo="datetime-local" />
-              <Campo nombre="fecha_fin" etiqueta="Fin" tipo="datetime-local" />
               <Campo nombre="presupuesto" etiqueta="Meta o presupuesto (S/)" tipo="number" />
               <Campo nombre="descripcion" etiqueta="Descripción" ancho />
             </>}

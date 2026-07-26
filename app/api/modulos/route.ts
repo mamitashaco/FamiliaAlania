@@ -64,12 +64,23 @@ export async function GET(request: NextRequest) {
       aseguradora: x.aseguradora, numero_poliza: x.numero_poliza, cobertura: x.cobertura,
       url: x.archivo_url ? (await supabase.storage.from(BUCKET).createSignedUrl(x.archivo_url, 3600)).data?.signedUrl : null,
     })));
-  } else if (modulo === "Viajes, eventos y proyectos") {
+  } else if (modulo === "Proyectos y eventos") {
     const r = await supabase.from("tb_viajes_eventos").select("*").order("fecha_inicio", { ascending: true });
+    const { data: integrantes } = await supabase.from("tb_integrantes").select("id,usuario_id,nombre_completo");
+    const nombresUsuario = new Map((integrantes ?? []).map((x) => [x.usuario_id, x.nombre_completo]));
+    const nombresIntegrante = new Map((integrantes ?? []).map((x) => [x.id, x.nombre_completo]));
+    const { data: compromisos } = await supabase.from("tb_eventos_compromisos").select("*");
     error = r.error; registros = (r.data ?? []).map((x) => ({
       titulo: x.titulo, detalle: `${x.tipo ?? "Evento"} · ${x.lugar ?? "Sin lugar"}`,
       meta: x.fecha_inicio ? new Date(x.fecha_inicio).toLocaleDateString("es-PE") : "Sin fecha",
       estado: x.estado ?? "Planificado",
+      id: x.id, tipo: x.tipo, lugar: x.lugar, fecha_inicio: x.fecha_inicio,
+      fecha_fin: x.fecha_fin, descripcion: x.descripcion, presupuesto: Number(x.presupuesto) || 0,
+      creado_por: x.creado_por, autor: nombresUsuario.get(x.creado_por) ?? "Usuario",
+      propio: x.creado_por === actual.usuarioId,
+      compromisos: (compromisos ?? []).filter((c) => c.viaje_evento_id === x.id).map((c) => ({
+        ...c, usuario: nombresIntegrante.get(c.integrante_id) ?? "Integrante",
+      })),
     }));
   } else if (modulo === "Mascotas") {
     const r = await supabase.from("tb_mascotas").select("*").order("nombre");
@@ -143,7 +154,18 @@ export async function POST(request: NextRequest) {
       contacto: valor("contacto") || null, telefono: valor("telefono") || null,
       archivo_url: ruta, estado: "Activo",
     }));
-  } else if (modulo === "Viajes, eventos y proyectos") {
+  } else if (modulo === "Proyectos y eventos") {
+    if (valor("accion") === "participar") {
+      const { error: errorAporte } = await supabase.from("tb_eventos_compromisos").upsert({
+        viaje_evento_id: valor("proyecto_id"), integrante_id: integranteId,
+        monto_comprometido: Number(valor("monto")) || 0,
+        monto_abonado: Number(valor("abonado")) || 0,
+        actividad: valor("actividad") || null, comentario: valor("comentario") || null,
+        actualizado_en: new Date().toISOString(),
+      }, { onConflict: "viaje_evento_id,integrante_id" });
+      if (errorAporte) return NextResponse.json({ error: errorAporte.message }, { status: 500 });
+      return NextResponse.json({ guardado: true }, { status: 201 });
+    }
     ({ error } = await supabase.from("tb_viajes_eventos").insert({
       titulo: valor("titulo"), tipo: valor("tipo"), lugar: valor("lugar") || null,
       fecha_inicio: valor("fecha_inicio") || null, fecha_fin: valor("fecha_fin") || null,
@@ -216,6 +238,20 @@ export async function PATCH(request: NextRequest) {
       tipo: cuerpo.titulo, aseguradora: cuerpo.aseguradora,
       numero_poliza: cuerpo.numero_poliza, cobertura: cuerpo.cobertura,
     }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  } else if (modulo === "Proyectos y eventos") {
+    const { data } = await supabase.from("tb_viajes_eventos").select("creado_por").eq("id", id).single();
+    if (actual.rol !== "administrador" && data?.creado_por !== actual.usuarioId)
+      return NextResponse.json({ error: "Solo el creador puede editar este proyecto" }, { status: 403 });
+    const cerrar = Boolean(cuerpo.cerrar);
+    const valores: Record<string, unknown> = cerrar
+      ? { estado: "Cerrado", fecha_fin: new Date().toISOString() }
+      : {
+          titulo: cuerpo.titulo, tipo: cuerpo.tipo, fecha_inicio: cuerpo.fecha_inicio || null,
+          lugar: cuerpo.lugar || null, descripcion: cuerpo.descripcion || null,
+          presupuesto: Number(cuerpo.presupuesto) || null,
+        };
+    const { error } = await supabase.from("tb_viajes_eventos").update(valores).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ guardado: true });

@@ -33,6 +33,16 @@ create index if not exists idx_tb_historial_accesos_fecha
 create index if not exists idx_tb_eventos_compromisos_evento
   on tb_eventos_compromisos(viaje_evento_id);
 
+alter table tb_eventos_compromisos
+  add column if not exists actividad text,
+  add column if not exists comentario text;
+
+alter table tb_eventos_compromisos
+  drop constraint if exists tb_eventos_compromisos_monto_comprometido_check;
+alter table tb_eventos_compromisos
+  add constraint tb_eventos_compromisos_monto_comprometido_check
+  check (monto_comprometido >= 0);
+
 alter table tb_historial_accesos enable row level security;
 alter table tb_eventos_compromisos enable row level security;
 alter table tb_configuracion_sistema enable row level security;
