@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Registro = { titulo: string; detalle: string; meta: string; estado?: string };
 
@@ -94,18 +94,68 @@ export default function Home() {
   const [buscar, setBuscar] = useState("");
   const [modal, setModal] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
+  const [integrantesBd, setIntegrantesBd] = useState<typeof integrantes>([]);
+
+  async function cargarDatos() {
+    const respuesta = await fetch("/api/datos");
+    if (!respuesta.ok) return;
+    const json = await respuesta.json();
+    setIntegrantesBd((json.integrantes ?? []).map((p: {
+      nombre_completo: string; edad: number | null; departamento: string | null; usuario_id: string | null;
+    }) => {
+      const partes = p.nombre_completo.split(" ");
+      return {
+        iniciales: `${partes[0]?.[0] ?? ""}${partes[1]?.[0] ?? ""}`.toUpperCase(),
+        nombre: p.nombre_completo,
+        rol: p.usuario_id ? "Integrante" : "Familiar",
+        edad: p.edad == null ? "Edad sin registrar" : `${p.edad} años`,
+        lugar: p.departamento ?? "Perú",
+        codigo: p.usuario_id ? "Usuario vinculado" : "Sin acceso",
+      };
+    }));
+  }
+
+  useEffect(() => {
+    fetch("/api/sesion").then((r) => r.json()).then((r) => {
+      if (r.autenticado) {
+        setSesion(true);
+        cargarDatos();
+      }
+    }).catch(() => undefined);
+  }, []);
+
+  const integrantesVisibles = integrantesBd.length ? integrantesBd : integrantes;
 
   const personasFiltradas = useMemo(
-    () => integrantes.filter((p) => p.nombre.toLowerCase().includes(buscar.toLowerCase())),
-    [buscar],
+    () => integrantesVisibles.filter((p) => p.nombre.toLowerCase().includes(buscar.toLowerCase())),
+    [buscar, integrantesVisibles],
   );
 
-  function ingresar(e: FormEvent) {
+  async function ingresar(e: FormEvent) {
     e.preventDefault();
-    if (codigo.length === 8 && clave.length >= 8) {
-      setError("");
-      setSesion(true);
-    } else setError("Ingresa un código de 8 dígitos y una contraseña válida.");
+    if (codigo.length !== 8 || clave.length < 8) {
+      setError("Ingresa un código de 8 dígitos y una contraseña válida.");
+      return;
+    }
+    const respuesta = await fetch("/api/sesion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codigo, clave }),
+    });
+    const json = await respuesta.json();
+    if (!respuesta.ok) {
+      setError(json.error ?? "No se pudo iniciar sesión.");
+      return;
+    }
+    setError("");
+    setSesion(true);
+    await cargarDatos();
+  }
+
+  async function cerrarSesion() {
+    await fetch("/api/sesion", { method: "DELETE" });
+    setSesion(false);
+    setIntegrantesBd([]);
   }
 
   function guardar(e: FormEvent<HTMLFormElement>) {
@@ -153,13 +203,13 @@ export default function Home() {
             <div className="buscar-global">⌕ <span>Buscar...</span><kbd>⌘ K</kbd></div>
             <button className="boton-icono notificacion" aria-label="Notificaciones">♢<b>3</b></button>
             <button className="boton-icono" onClick={() => setOscuro(!oscuro)} aria-label="Cambiar tema">{oscuro ? "☀" : "☾"}</button>
-            <button className="avatar avatar-boton" onClick={() => setSesion(false)} title="Cerrar sesión">RA</button>
+            <button className="avatar avatar-boton" onClick={cerrarSesion} title="Cerrar sesión">RA</button>
           </div>
         </header>
 
         <div className="pagina">
           <div className="aviso-demo"><span>DATOS DE DEMOSTRACIÓN</span><p>Explora libremente. La información mostrada es ficticia y sirve para evaluar el diseño.</p></div>
-          {seccion === "Inicio" ? <Inicio onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")} /> :
+          {seccion === "Inicio" ? <Inicio personas={integrantesVisibles} onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")} /> :
             seccion === "Integrantes" ? (
               <VistaIntegrantes buscar={buscar} setBuscar={setBuscar} personas={personasFiltradas} onAdd={() => setModal("Nuevo integrante")} />
             ) : (
@@ -174,7 +224,7 @@ export default function Home() {
   );
 }
 
-function Inicio({ onNavigate, onAdd }: { onNavigate: (s: string) => void; onAdd: () => void }) {
+function Inicio({ personas, onNavigate, onAdd }: { personas: typeof integrantes; onNavigate: (s: string) => void; onAdd: () => void }) {
   const resumen = [
     ["♡", "Salud", "3 próximas citas", "2 medicamentos por renovar"],
     ["▥", "Finanzas", "S/ 3,570", "Balance disponible de julio"],
@@ -197,8 +247,8 @@ function Inicio({ onNavigate, onAdd }: { onNavigate: (s: string) => void; onAdd:
         <div className="tarjeta lista-fechas">{fechas.map((f) => <article key={f.titulo}><div className="fecha"><strong>{f.dia}</strong><span>{f.mes}</span></div><div><h3>{f.titulo}</h3><p>{f.detalle}</p></div><button>›</button></article>)}</div>
       </section>
       <section>
-        <div className="cabecera-seccion"><div><h2>Integrantes</h2><p>6 miembros registrados</p></div><button onClick={() => onNavigate("Integrantes")}>Ver todos →</button></div>
-        <div className="tarjeta lista-personas">{integrantes.slice(0, 3).map((p) => <button key={p.nombre} onClick={() => onNavigate("Integrantes")}><span className="avatar">{p.iniciales}</span><span><strong>{p.nombre}</strong><small>{p.edad} · {p.lugar}</small></span><i>›</i></button>)}</div>
+        <div className="cabecera-seccion"><div><h2>Integrantes</h2><p>{personas.length} miembros registrados</p></div><button onClick={() => onNavigate("Integrantes")}>Ver todos →</button></div>
+        <div className="tarjeta lista-personas">{personas.slice(0, 3).map((p) => <button key={p.nombre} onClick={() => onNavigate("Integrantes")}><span className="avatar">{p.iniciales}</span><span><strong>{p.nombre}</strong><small>{p.edad} · {p.lugar}</small></span><i>›</i></button>)}</div>
       </section>
     </div>
     <div className="cabecera-seccion separada"><div><h2>Vista general</h2><p>Acceso a la información esencial</p></div></div>
