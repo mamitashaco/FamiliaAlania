@@ -14,8 +14,17 @@ export async function GET(request: NextRequest) {
   const { data: integrantes, error } = await supabase.from("tb_integrantes").select("id,usuario_id,nombre_completo,observaciones").order("nombre_completo");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const { data: usuarios } = await supabase.from("tb_usuarios").select("id,codigo,activo,rol");
+  const { data: accesos } = await supabase
+    .from("tb_historial_accesos")
+    .select("id,usuario_id,codigo,exitoso,direccion_ip,dispositivo,navegador,creado_en")
+    .order("creado_en", { ascending: false })
+    .limit(100);
   const porId = new Map((usuarios ?? []).map((u) => [u.id, u]));
-  return NextResponse.json({ integrantes: integrantes?.map((i) => ({ ...i, requiere_asistencia: i.observaciones?.includes("[ASISTENCIA]") ?? false, codigo: i.usuario_id ? porId.get(i.usuario_id)?.codigo?.trim() ?? "" : "", activo: i.usuario_id ? porId.get(i.usuario_id)?.activo : false })) });
+  const nombres = new Map((integrantes ?? []).map((i) => [i.usuario_id, i.nombre_completo]));
+  return NextResponse.json({
+    integrantes: integrantes?.map((i) => ({ ...i, requiere_asistencia: i.observaciones?.includes("[ASISTENCIA]") ?? false, codigo: i.usuario_id ? porId.get(i.usuario_id)?.codigo?.trim() ?? "" : "", activo: i.usuario_id ? porId.get(i.usuario_id)?.activo : false })),
+    accesos: (accesos ?? []).map((a) => ({ ...a, nombre: a.usuario_id ? nombres.get(a.usuario_id) ?? "Usuario" : "Intento sin identificar" })),
+  });
 }
 
 export async function PATCH(request: NextRequest) {

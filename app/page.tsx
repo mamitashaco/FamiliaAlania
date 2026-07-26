@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, CalendarDays, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards } from "lucide-react";
 
 type Registro = {
@@ -8,6 +8,12 @@ type Registro = {
   detalle: string;
   meta: string;
   estado?: string;
+  fecha?: string;
+  precio?: number;
+  valor?: number;
+  tienda?: string;
+  presentacion?: string;
+  url?: string;
 };
 type Integrante = {
   id: string;
@@ -63,7 +69,7 @@ type Integrante = {
 const navegacion = [
   ["Inicio", HomeIcon], ["Integrantes", Users], ["Salud", HeartPulse], ["Finanzas", WalletCards],
   ["Precios", ShoppingBasket], ["Educación", GraduationCap], ["Seguros", ShieldCheck],
-  ["Viajes y eventos", Plane], ["Mascotas", PawPrint], ["Archivos históricos", Archive],
+  ["Viajes, eventos y proyectos", Plane], ["Mascotas", PawPrint], ["Archivos históricos", Archive],
 ] as const;
 
 const integrantes: Integrante[] = [];
@@ -192,6 +198,7 @@ export default function Home() {
   const [aviso, setAviso] = useState("");
   const [integrantesBd, setIntegrantesBd] = useState<Integrante[]>([]);
   const [precios, setPrecios] = useState<Registro[]>([]);
+  const [registrosModulo, setRegistrosModulo] = useState<Record<string, Registro[]>>({});
   const [usuarioId, setUsuarioId] = useState("");
   const [rolSesion, setRolSesion] = useState<"administrador" | "integrante">(
     "integrante",
@@ -306,8 +313,22 @@ export default function Home() {
           ? `S/${costo.toLocaleString("es-PE", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`
           : "—",
         estado: producto.categoria ?? "Sin categoría",
+        fecha: registro.registrado_en,
+        precio,
+        valor: costo,
+        tienda: tienda.nombre ?? "Tienda",
+        presentacion: producto.presentacion ?? "",
       };
     }));
+  }
+
+  async function cargarModulo(nombre: string) {
+    if (nombre === "Precios") return cargarPrecios();
+    if (["Inicio", "Integrantes", "Salud"].includes(nombre)) return;
+    const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(nombre)}`);
+    if (!respuesta.ok) return;
+    const json = await respuesta.json();
+    setRegistrosModulo((actual) => ({ ...actual, [nombre]: json.registros ?? [] }));
   }
 
   useEffect(() => {
@@ -375,6 +396,17 @@ export default function Home() {
         return;
       }
       await cargarPrecios();
+    } else if (!["Inicio", "Integrantes", "Salud", "Configuración"].includes(seccion)) {
+      const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(seccion)}`, {
+        method: "POST",
+        body: new FormData(e.currentTarget),
+      });
+      const json = await respuesta.json();
+      if (!respuesta.ok) {
+        setAviso(json.error ?? "No se pudo guardar el registro");
+        return;
+      }
+      await cargarModulo(seccion);
     }
     setModal(null);
     setAviso("Registro guardado correctamente");
@@ -457,11 +489,10 @@ export default function Home() {
                 className={seccion === nombre ? "activo" : ""}
                 onClick={() => {
                   setSeccion(nombre);
-                  if (nombre === "Precios") cargarPrecios();
+                  cargarModulo(nombre);
                 }}
               >
                 <IconoNav size={15} strokeWidth={1.8} /> {nombre}
-                {nombre === "Salud" && <b>2</b>}
               </button>
             ))}
           </nav>
@@ -470,12 +501,6 @@ export default function Home() {
               ⌕ <span>Buscar...</span>
               <kbd>⌘ K</kbd>
             </div>
-            <button
-              className="boton-icono notificacion"
-              aria-label="Notificaciones"
-            >
-              ♢<b>3</b>
-            </button>
             <button
               className="boton-icono"
               onClick={() => setOscuro(!oscuro)}
@@ -495,6 +520,20 @@ export default function Home() {
               </button>
               {menuCuenta && (
                 <div className="menu-cuenta-panel">
+                  <button
+                    onClick={() => {
+                      const propia = integrantesVisibles.find(
+                        (persona) => persona.usuarioId === usuarioId,
+                      );
+                      if (propia) {
+                        setFichaDesdeSalud(false);
+                        setFicha(propia);
+                      }
+                      setMenuCuenta(false);
+                    }}
+                  >
+                    ♙ Mi ficha
+                  </button>
                   {rolSesion === "administrador" && (
                     <button
                       onClick={() => {
@@ -544,7 +583,11 @@ export default function Home() {
           ) : (
             <VistaModulo
               titulo={seccion}
-              registros={seccion === "Precios" ? precios : (datos[seccion] ?? [])}
+              registros={
+                seccion === "Precios"
+                  ? precios
+                  : (registrosModulo[seccion] ?? datos[seccion] ?? [])
+              }
               onAdd={() => setModal(`Nuevo registro · ${seccion}`)}
             />
           )}
@@ -1449,6 +1492,124 @@ function VistaSalud({ onChanged, onEditProfile }: { onChanged: () => void; onEdi
   );
 }
 
+function claveProducto(nombre: string) {
+  return nombre
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:x\s*\d+)?\s*(?:kg|g|mg|l|ml|unidades?|und|u)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function GraficoPrecios({ registros }: { registros: Registro[] }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [verPrecio, setVerPrecio] = useState(true);
+  const [verValor, setVerValor] = useState(true);
+  const ordenados = [...registros].filter((x) => x.fecha).sort((a, b) =>
+    String(a.fecha).localeCompare(String(b.fecha)),
+  );
+  useEffect(() => {
+    const elemento = canvas.current;
+    if (!elemento) return;
+    const ctx = elemento.getContext("2d");
+    if (!ctx) return;
+    const ancho = elemento.clientWidth || 620;
+    const alto = 190;
+    elemento.width = ancho;
+    elemento.height = alto;
+    ctx.clearRect(0, 0, ancho, alto);
+    const series = [
+      ...(verPrecio ? ordenados.map((x) => Number(x.precio)) : []),
+      ...(verValor ? ordenados.map((x) => Number(x.valor)) : []),
+    ].filter(Number.isFinite);
+    if (!series.length) return;
+    const maximo = Math.max(...series, 1);
+    const dibujar = (valores: number[], color: string) => {
+      ctx.beginPath();
+      valores.forEach((valor, i) => {
+        const x = 34 + (i * (ancho - 54)) / Math.max(valores.length - 1, 1);
+        const y = 15 + (1 - valor / maximo) * 135;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    };
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(34, 10);
+    ctx.lineTo(34, 152);
+    ctx.lineTo(ancho - 12, 152);
+    ctx.stroke();
+    if (verPrecio) dibujar(ordenados.map((x) => Number(x.precio)), "#ca8a04");
+    if (verValor) dibujar(ordenados.map((x) => Number(x.valor)), "#2563eb");
+    ctx.fillStyle = "#64748b";
+    ctx.font = "10px Roboto";
+    ordenados.forEach((registro, i) => {
+      const x = 34 + (i * (ancho - 54)) / Math.max(ordenados.length - 1, 1);
+      ctx.fillText(
+        new Date(String(registro.fecha)).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" }),
+        Math.max(4, x - 13),
+        174,
+      );
+    });
+  }, [ordenados, verPrecio, verValor]);
+  return (
+    <div className="grafico-precios">
+      <div className="leyenda-grafico">
+        <button className={verPrecio ? "activo" : ""} onClick={() => setVerPrecio(!verPrecio)}>Precio</button>
+        <button className={verValor ? "activo valor" : ""} onClick={() => setVerValor(!verValor)}>Valor</button>
+      </div>
+      <canvas ref={canvas} aria-label="Historial de precio y valor por fecha" />
+    </div>
+  );
+}
+
+function VistaProductos({ precios }: { precios: Registro[] }) {
+  const grupos = Array.from(
+    precios.reduce((mapa, precio) => {
+      const clave = claveProducto(precio.titulo);
+      mapa.set(clave, [...(mapa.get(clave) ?? []), precio]);
+      return mapa;
+    }, new Map<string, Registro[]>()),
+  );
+  if (!grupos.length)
+    return <section className="tarjeta estado-vacio"><h2>Sin productos</h2><p>Agrega precios para comparar tiendas e historial.</p></section>;
+  return (
+    <div className="productos-agrupados">
+      {grupos.map(([clave, lista]) => {
+        const preciosValidos = lista.map((x) => Number(x.precio)).filter(Number.isFinite);
+        const valoresValidos = lista.map((x) => Number(x.valor)).filter(Number.isFinite);
+        const mejor = [...lista].sort((a, b) => Number(a.valor) - Number(b.valor))[0];
+        return (
+          <section className="tarjeta producto-comparado" key={clave}>
+            <div className="producto-cabecera">
+              <div><span className="etiqueta">PRODUCTO</span><h2>{lista[0].titulo}</h2></div>
+              <div className="promedios-producto">
+                <span>Precio promedio <b>S/{(preciosValidos.reduce((a, b) => a + b, 0) / preciosValidos.length).toFixed(2)}</b></span>
+                <span>Valor promedio <b>S/{(valoresValidos.reduce((a, b) => a + b, 0) / valoresValidos.length).toFixed(3)}</b></span>
+                <span>Mejor tienda <b>{mejor?.tienda}</b></span>
+              </div>
+            </div>
+            <div className="tabla-producto">
+              <div><b>Tienda</b><b>Presentación</b><b>Precio</b><b>Valor</b></div>
+              {lista.map((x, i) => <div key={`${x.tienda}-${x.fecha}-${i}`}>
+                <span>{x.tienda}</span><span>{x.presentacion}</span>
+                <span>S/{Number(x.precio).toFixed(2)}</span><span>S/{Number(x.valor).toFixed(3)}</span>
+              </div>)}
+            </div>
+            <h3>Historial de precios</h3>
+            <GraficoPrecios registros={lista} />
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function VistaModulo({
   titulo,
   registros,
@@ -1472,6 +1633,15 @@ function VistaModulo({
             (categoriaModulo === "Todas" || registro.estado === categoriaModulo),
         )
       : registros;
+  useEffect(() => {
+    setPestanaActiva(titulo === "Finanzas" ? "Resumen" : "Todos");
+  }, [titulo]);
+  const registrosPestana =
+    titulo === "Finanzas" && pestanaActiva === "Ingresos"
+      ? registrosVisibles.filter((x) => x.detalle.toLowerCase().startsWith("ingreso"))
+      : titulo === "Finanzas" && pestanaActiva === "Gastos"
+        ? registrosVisibles.filter((x) => x.detalle.toLowerCase().startsWith("gasto"))
+        : registrosVisibles;
   const descripciones: Record<string, string> = {
     Salud:
       "Historial médico, medicamentos, vacunas, exámenes y signos vitales.",
@@ -1479,7 +1649,7 @@ function VistaModulo({
     Precios: "Compara tiendas y consulta el historial de precios por producto.",
     Educación: "Estudios, cursos, certificados y documentos académicos.",
     Seguros: "Pólizas, coberturas, vencimientos y contactos de asistencia.",
-    "Viajes y eventos":
+    "Viajes, eventos y proyectos":
       "Itinerarios, participantes, reservas, presupuestos y fechas.",
     Mascotas: "Información e historial veterinario de cada mascota.",
     "Archivos históricos": "Documentos, fotografías y recuerdos de la familia.",
@@ -1505,7 +1675,9 @@ function VistaModulo({
             ]
           : titulo === "Finanzas"
             ? ["Resumen", "Ingresos", "Gastos", "Reportes"]
-            : ["Todos", "Próximos", "Documentos"]
+            : titulo === "Precios"
+              ? ["Todos", "Producto", "Documentos"]
+              : ["Todos", "Próximos", "Documentos"]
         ).map((x) => (
           <button
             className={pestanaActiva === x ? "seleccionada" : ""}
@@ -1538,7 +1710,10 @@ function VistaModulo({
           </select>
         </section>
       )}
-      {pestanaActiva === "Todos" && registrosVisibles.length ? (
+      {titulo === "Precios" && pestanaActiva === "Producto" && (
+        <VistaProductos precios={registrosVisibles} />
+      )}
+      {(pestanaActiva === "Todos" || pestanaActiva === "Resumen" || pestanaActiva === "Ingresos" || pestanaActiva === "Gastos") && registrosPestana.length ? (
         <section className="tarjeta tabla">
           <div className="tabla-cabecera">
             <span>{titulo === "Precios" ? "Descripción de producto" : "Registro"}</span>
@@ -1546,15 +1721,21 @@ function VistaModulo({
             <span>{titulo === "Precios" ? "Valor" : "Información"}</span>
             <span>{titulo === "Precios" ? "Categoría" : "Estado"}</span>
           </div>
-          {registrosVisibles.map((r, indice) => (
-            <button className="tabla-fila" key={`${r.titulo}-${r.detalle}-${indice}`}>
+          {registrosPestana.map((r, indice) => (
+            <button
+              className="tabla-fila"
+              key={`${r.titulo}-${r.detalle}-${indice}`}
+              onClick={() => r.url && window.open(r.url, "_blank", "noopener,noreferrer")}
+            >
               <span>
                 <i className="punto" /> <strong>{r.titulo}</strong>
               </span>
               <span>{r.detalle}</span>
               <span>{r.meta}</span>
               <span>
-                <b className={titulo === "Precios" ? "" : "insignia"}>{r.estado}</b>
+                <b className={titulo === "Precios" ? "" : "insignia"}>
+                  {r.url ? "Descargar" : r.estado}
+                </b>
                 {titulo === "Precios" ? "" : " ›"}
               </span>
             </button>
@@ -1589,14 +1770,26 @@ type UsuarioConfig = {
   rol: "administrador" | "integrante";
   requiere_asistencia: boolean;
 };
+type AccesoConfig = {
+  id: string;
+  nombre: string;
+  codigo: string | null;
+  exitoso: boolean;
+  direccion_ip: string | null;
+  dispositivo: string | null;
+  navegador: string | null;
+  creado_en: string;
+};
 function VistaConfiguracion({ onChanged }: { onChanged: () => void }) {
   const [usuarios, setUsuarios] = useState<UsuarioConfig[]>([]);
+  const [accesos, setAccesos] = useState<AccesoConfig[]>([]);
   const [guardado, setGuardado] = useState("");
   const [error, setError] = useState("");
   async function cargarConfiguracion() {
     const respuesta = await fetch("/api/configuracion");
     const json = await respuesta.json();
     setUsuarios(json.integrantes ?? []);
+    setAccesos(json.accesos ?? []);
   }
   useEffect(() => {
     cargarConfiguracion();
@@ -1746,6 +1939,27 @@ function VistaConfiguracion({ onChanged }: { onChanged: () => void }) {
             </div>
           </form>
         ))}
+      </section>
+      <section className="separada">
+        <div className="cabecera-seccion">
+          <div>
+            <h2>Historial de accesos</h2>
+            <p>Ingresos e intentos desde computadoras y móviles.</p>
+          </div>
+        </div>
+        <div className="tarjeta tabla tabla-accesos">
+          <div className="tabla-cabecera">
+            <span>Usuario</span><span>Dispositivo</span><span>Fecha e IP</span><span>Resultado</span>
+          </div>
+          {accesos.length ? accesos.map((acceso) => (
+            <div className="tabla-fila" key={acceso.id}>
+              <span><strong>{acceso.nombre}</strong><small>{acceso.codigo ?? "Código inválido"}</small></span>
+              <span>{acceso.dispositivo ?? "No identificado"}</span>
+              <span>{new Date(acceso.creado_en).toLocaleString("es-PE")}<small>{acceso.direccion_ip ?? "IP no disponible"}</small></span>
+              <span><b className="insignia">{acceso.exitoso ? "Ingreso correcto" : "Intento fallido"}</b></span>
+            </div>
+          )) : <div className="estado-vacio"><p>Aún no hay accesos registrados.</p></div>}
+        </div>
       </section>
     </>
   );
@@ -2517,6 +2731,59 @@ function ListaEditable({
   );
 }
 
+function Campo({
+  nombre,
+  etiqueta,
+  tipo = "text",
+  obligatorio = false,
+  ancho = false,
+}: {
+  nombre: string;
+  etiqueta: string;
+  tipo?: string;
+  obligatorio?: boolean;
+  ancho?: boolean;
+}) {
+  return (
+    <label className={ancho ? "ancho" : ""}>
+      <span>
+        {etiqueta} {obligatorio && <b className="obligatorio">*</b>}
+      </span>
+      <input
+        name={nombre}
+        type={tipo}
+        required={obligatorio}
+        step={tipo === "number" ? "0.01" : undefined}
+        defaultValue={tipo === "date" && nombre === "fecha" ? new Date().toLocaleDateString("sv-SE") : undefined}
+        accept={tipo === "file" ? "image/*,.pdf,.doc,.docx" : undefined}
+      />
+    </label>
+  );
+}
+
+function CampoSelect({
+  nombre,
+  etiqueta,
+  opciones,
+  obligatorio = false,
+}: {
+  nombre: string;
+  etiqueta: string;
+  opciones: string[];
+  obligatorio?: boolean;
+}) {
+  return (
+    <label>
+      <span>
+        {etiqueta} {obligatorio && <b className="obligatorio">*</b>}
+      </span>
+      <select name={nombre} required={obligatorio}>
+        {opciones.map((opcion) => <option key={opcion}>{opcion}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function Modal({
   titulo,
   seccion,
@@ -2570,29 +2837,17 @@ function Modal({
                 </label>
               </div>
             )}
-            <label className={seccion === "Precios" ? "ancho" : ""}>
+            {seccion === "Precios" && <label className="ancho">
               <span>
-                {seccion === "Precios" ? "Descripción del producto" : "Título"}{" "}
+                Descripción del producto{" "}
                 <b className="obligatorio">*</b>
               </span>
               <input
-                name={seccion === "Precios" ? "descripcion" : "titulo"}
+                name="descripcion"
                 required
-                placeholder={
-                  seccion === "Precios"
-                    ? "Ej. Aceite vegetal"
-                    : "Nombre del registro"
-                }
+                placeholder="Ej. Aceite vegetal"
               />
-            </label>
-            {seccion !== "Precios" && (
-              <label>
-                <span>
-                  Fecha <b className="obligatorio">*</b>
-                </span>
-                <input name="fecha" required type="date" />
-              </label>
-            )}
+            </label>}
             {seccion === "Precios" && (
               <>
                 <label>
@@ -2627,15 +2882,52 @@ function Modal({
                 </label>
               </>
             )}
-            {seccion !== "Precios" && (
-              <label className="ancho">
-                <span>Descripción u observaciones</span>
-                <textarea
-                  rows={4}
-                  placeholder="Agrega información útil para la familia"
-                />
-              </label>
-            )}
+            {seccion === "Finanzas" && <>
+              <CampoSelect nombre="tipo" etiqueta="Tipo" opciones={["ingreso", "gasto"]} obligatorio />
+              <Campo nombre="fecha" etiqueta="Fecha" tipo="date" obligatorio />
+              <Campo nombre="descripcion" etiqueta="Descripción" obligatorio ancho />
+              <Campo nombre="categoria" etiqueta="Categoría" obligatorio />
+              <Campo nombre="monto" etiqueta="Monto (S/)" tipo="number" obligatorio />
+              <Campo nombre="observaciones" etiqueta="Observaciones" ancho />
+            </>}
+            {seccion === "Educación" && <>
+              <Campo nombre="titulo" etiqueta="Título del documento" obligatorio ancho />
+              <Campo nombre="institucion" etiqueta="Institución" obligatorio />
+              <CampoSelect nombre="categoria" etiqueta="Categoría" opciones={["Estudios", "Cursos", "Certificados", "Documentos académicos"]} obligatorio />
+              <Campo nombre="archivo" etiqueta="Archivo" tipo="file" obligatorio ancho />
+            </>}
+            {seccion === "Seguros" && <>
+              <Campo nombre="tipo" etiqueta="Tipo de seguro" obligatorio />
+              <Campo nombre="aseguradora" etiqueta="Aseguradora" obligatorio />
+              <Campo nombre="numero_poliza" etiqueta="Número de póliza" obligatorio />
+              <Campo nombre="contacto" etiqueta="Contacto" />
+              <Campo nombre="fecha_inicio" etiqueta="Inicio de vigencia" tipo="date" />
+              <Campo nombre="fecha_fin" etiqueta="Fin de vigencia" tipo="date" />
+              <Campo nombre="telefono" etiqueta="Teléfono" />
+              <Campo nombre="cobertura" etiqueta="Cobertura" ancho />
+            </>}
+            {seccion === "Viajes, eventos y proyectos" && <>
+              <Campo nombre="titulo" etiqueta="Título" obligatorio ancho />
+              <CampoSelect nombre="tipo" etiqueta="Tipo" opciones={["Viaje", "Evento", "Proyecto de mejora"]} obligatorio />
+              <Campo nombre="lugar" etiqueta="Lugar" />
+              <Campo nombre="fecha_inicio" etiqueta="Inicio" tipo="datetime-local" />
+              <Campo nombre="fecha_fin" etiqueta="Fin" tipo="datetime-local" />
+              <Campo nombre="presupuesto" etiqueta="Meta o presupuesto (S/)" tipo="number" />
+              <Campo nombre="descripcion" etiqueta="Descripción" ancho />
+            </>}
+            {seccion === "Mascotas" && <>
+              <Campo nombre="nombre" etiqueta="Nombre" obligatorio />
+              <Campo nombre="especie" etiqueta="Especie" obligatorio />
+              <Campo nombre="raza" etiqueta="Raza" />
+              <CampoSelect nombre="sexo" etiqueta="Sexo" opciones={["Macho", "Hembra", "No registrado"]} />
+              <Campo nombre="fecha_nacimiento" etiqueta="Fecha de nacimiento" tipo="date" />
+              <Campo nombre="observaciones" etiqueta="Observaciones" ancho />
+            </>}
+            {seccion === "Archivos históricos" && <>
+              <Campo nombre="titulo" etiqueta="Título" obligatorio ancho />
+              <Campo nombre="descripcion" etiqueta="Descripción de la foto" ancho />
+              <Campo nombre="archivo" etiqueta="Fotografía" tipo="file" obligatorio ancho />
+            </>}
           </div>
           <div className="modal-acciones">
             <button type="button" className="secundario" onClick={onClose}>
