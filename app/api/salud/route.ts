@@ -51,6 +51,15 @@ export async function POST(request: NextRequest) {
   };
   const config = configuracion[cuerpo.tipo];
   if (!config) return NextResponse.json({ error: "Tipo de registro inválido" }, { status: 400 });
+  const requeridos: Record<string, string[]> = {
+    historial: ["fecha", "diagnostico", "tratamiento"],
+    medicamentos: ["nombre"],
+    vacunas: ["nombre", "fecha_aplicacion"],
+    examenes: ["nombre", "fecha"],
+    signos: ["registrado_en"],
+  };
+  const faltante = requeridos[cuerpo.tipo]?.find((campo) => !String(cuerpo[campo] ?? "").trim());
+  if (faltante) return NextResponse.json({ error: "Completa todos los campos marcados con *" }, { status: 400 });
   const valores: Record<string, unknown> = { integrante_id: integranteId };
   config.campos.forEach((campo) => { valores[campo] = cuerpo[campo] || null; });
   if (cuerpo.tipo === "medicamentos" && cuerpo.frecuencia_horas) valores.frecuencia = `Cada ${cuerpo.frecuencia_horas} horas`;
