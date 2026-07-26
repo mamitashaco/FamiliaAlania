@@ -174,7 +174,8 @@ export default function Home() {
         </header>
 
         <div className="pagina">
-          {seccion === "Inicio" ? <Inicio personas={integrantesVisibles} onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")} /> :
+          {seccion === "Inicio" ? <Inicio personas={integrantesVisibles} onNavigate={setSeccion} onAdd={() => setModal("Agregar registro")}
+            saludo={rolSesion === "administrador" ? `Buenos días, Administrador ${integrantesVisibles.find((p) => p.usuarioId === usuarioId)?.nombre ?? ""}`.trim() : `Buenos días, ${integrantesVisibles.find((p) => p.usuarioId === usuarioId)?.nombre ?? "Integrante"}`} /> :
             seccion === "Integrantes" ? (
               <VistaIntegrantes buscar={buscar} setBuscar={setBuscar} personas={personasFiltradas}
                 esAdministrador={rolSesion === "administrador"} usuarioId={usuarioId}
@@ -198,10 +199,10 @@ export default function Home() {
   );
 }
 
-function Inicio({ personas, onNavigate, onAdd }: { personas: typeof integrantes; onNavigate: (s: string) => void; onAdd: () => void }) {
+function Inicio({ personas, onNavigate, onAdd, saludo }: { personas: typeof integrantes; onNavigate: (s: string) => void; onAdd: () => void; saludo: string }) {
   return <>
     <section className="bienvenida">
-      <div><div className="etiqueta">ESPACIO FAMILIAR</div><h1>Familia Alania</h1><p>Información familiar centralizada y protegida.</p></div>
+      <div><div className="etiqueta">ESPACIO FAMILIAR</div><h1>{saludo}</h1><p>Información familiar centralizada y protegida.</p></div>
       <button className="primario" onClick={onAdd}>＋ Agregar registro</button>
     </section>
     <section className="metricas">
