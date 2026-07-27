@@ -83,12 +83,18 @@ export async function GET(request: NextRequest) {
       })),
     }));
   } else if (modulo === "Mascotas") {
-    const r = await supabase.from("tb_mascotas").select("*").order("nombre");
-    error = r.error; registros = (r.data ?? []).map((x) => ({
+    const r = await supabase.from("tb_mascotas").select("*,tb_historial_veterinario(*)").order("nombre");
+    error = r.error; registros = await Promise.all((r.data ?? []).map(async (x) => ({
       titulo: x.nombre, detalle: `${x.especie ?? "Mascota"} · ${x.raza ?? "Sin raza"}`,
       meta: x.fecha_nacimiento ? `Nació ${new Date(`${x.fecha_nacimiento}T00:00:00`).toLocaleDateString("es-PE")}` : "Edad sin registrar",
       estado: x.sexo ?? "Sin registrar",
-    }));
+      id:x.id,nombre:x.nombre,especie:x.especie,raza:x.raza,sexo:x.sexo,
+      fecha_nacimiento:x.fecha_nacimiento,color:x.color,peso_kg:x.peso_kg,
+      microchip:x.microchip,observaciones:x.observaciones,
+      historial: await Promise.all((x.tb_historial_veterinario??[]).map(async (h:Record<string,any>)=>({
+        ...h,url:h.archivo_url?(await supabase.storage.from(BUCKET).createSignedUrl(h.archivo_url,3600)).data?.signedUrl:null,
+      }))),
+    })));
   } else if (modulo === "Educación") {
     const { data: integrantes } = await supabase.from("tb_integrantes").select("id,nombre_completo");
     const nombres = new Map((integrantes ?? []).map((x) => [x.id, x.nombre_completo]));
@@ -173,6 +179,18 @@ export async function POST(request: NextRequest) {
       estado: "Planificado", creado_por: actual.usuarioId,
     }));
   } else if (modulo === "Mascotas") {
+    if (valor("accion") === "veterinario") {
+      const archivo=form.get("archivo");
+      const ruta=archivo instanceof File&&archivo.size?await subirArchivo(archivo,actual.usuarioId):null;
+      const { error:errorVet }=await supabase.from("tb_historial_veterinario").insert({
+        mascota_id:valor("mascota_id"),fecha:valor("fecha"),tipo:valor("tipo"),
+        diagnostico:valor("diagnostico")||null,tratamiento:valor("tratamiento")||null,
+        veterinario:valor("veterinario")||null,clinica:valor("clinica")||null,
+        proximo_control:valor("proximo_control")||null,archivo_url:ruta,
+      });
+      if(errorVet)return NextResponse.json({error:errorVet.message},{status:500});
+      return NextResponse.json({guardado:true},{status:201});
+    }
     ({ error } = await supabase.from("tb_mascotas").insert({
       nombre: valor("nombre"), especie: valor("especie"), raza: valor("raza") || null,
       sexo: valor("sexo") || null, fecha_nacimiento: valor("fecha_nacimiento") || null,
@@ -253,6 +271,13 @@ export async function PATCH(request: NextRequest) {
         };
     const { error } = await supabase.from("tb_viajes_eventos").update(valores).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  } else if (modulo === "Mascotas") {
+    const { error }=await supabase.from("tb_mascotas").update({
+      nombre:cuerpo.nombre,especie:cuerpo.especie,raza:cuerpo.raza||null,
+      sexo:cuerpo.sexo||null,fecha_nacimiento:cuerpo.fecha_nacimiento||null,
+      peso_kg:Number(cuerpo.peso_kg)||null,observaciones:cuerpo.observaciones||null,
+    }).eq("id",id);
+    if(error)return NextResponse.json({error:error.message},{status:500});
   }
   return NextResponse.json({ guardado: true });
 }

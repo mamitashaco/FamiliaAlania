@@ -600,6 +600,17 @@ export default function Home() {
               onAdd={() => setModal("Nuevo registro · Proyectos y eventos")}
               onReload={() => cargarModulo("Proyectos y eventos")}
             />
+          ) : seccion === "Mascotas" ? (
+            <VistaMascotas
+              registros={registrosModulo.Mascotas ?? []}
+              onAdd={() => setModal("Nuevo registro · Mascotas")}
+              onReload={() => cargarModulo("Mascotas")}
+            />
+          ) : seccion === "Archivos históricos" ? (
+            <VistaArchivosHistoricos
+              registros={registrosModulo["Archivos históricos"] ?? []}
+              onAdd={() => setModal("Nuevo registro · Archivos históricos")}
+            />
           ) : (
             <VistaModulo
               titulo={seccion}
@@ -1538,6 +1549,7 @@ function GraficoPrecios({ registros }: { registros: Registro[] }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [verPrecio, setVerPrecio] = useState(true);
   const [verValor, setVerValor] = useState(true);
+  const [tooltip, setTooltip] = useState<{ x:number; texto:string } | null>(null);
   const ordenados = [...registros].filter((x) => x.fecha).sort((a, b) =>
     String(a.fecha).localeCompare(String(b.fecha)),
   );
@@ -1558,12 +1570,18 @@ function GraficoPrecios({ registros }: { registros: Registro[] }) {
     if (!series.length) return;
     const maximo = Math.max(...series, 1);
     const dibujar = (valores: number[], color: string) => {
+      const puntos = valores.map((valor, i) => ({
+        x: 34 + (i * (ancho - 54)) / Math.max(valores.length - 1, 1),
+        y: 15 + (1 - valor / maximo) * 135,
+      }));
       ctx.beginPath();
-      valores.forEach((valor, i) => {
-        const x = 34 + (i * (ancho - 54)) / Math.max(valores.length - 1, 1);
-        const y = 15 + (1 - valor / maximo) * 135;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      puntos.forEach((punto, i) => {
+        if (i === 0) ctx.moveTo(punto.x, punto.y);
+        else {
+          const anterior = puntos[i - 1];
+          const medio = (anterior.x + punto.x) / 2;
+          ctx.bezierCurveTo(medio, anterior.y, medio, punto.y, punto.x, punto.y);
+        }
       });
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
@@ -1595,7 +1613,22 @@ function GraficoPrecios({ registros }: { registros: Registro[] }) {
         <button className={verPrecio ? "activo" : ""} onClick={() => setVerPrecio(!verPrecio)}>Precio</button>
         <button className={verValor ? "activo valor" : ""} onClick={() => setVerValor(!verValor)}>Valor</button>
       </div>
-      <canvas ref={canvas} aria-label="Historial de precio y valor por fecha" />
+      <canvas
+        ref={canvas}
+        aria-label="Historial de precio y valor por fecha"
+        onPointerMove={(e) => {
+          if (!ordenados.length) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const indice = Math.max(0, Math.min(ordenados.length - 1, Math.round(((e.clientX - rect.left - 34) / Math.max(rect.width - 54, 1)) * Math.max(ordenados.length - 1, 1))));
+          const r = ordenados[indice];
+          setTooltip({
+            x: e.clientX - rect.left,
+            texto: `${new Date(String(r.fecha)).toLocaleDateString("es-PE")} · Precio S/${Number(r.precio).toFixed(2)} · Valor S/${Number(r.valor).toFixed(3)}`,
+          });
+        }}
+        onPointerLeave={() => setTooltip(null)}
+      />
+      {tooltip && <span className="tooltip-grafico" style={{ left: tooltip.x }}>{tooltip.texto}</span>}
     </div>
   );
 }
@@ -1743,24 +1776,34 @@ const categoriasEgresoIniciales = ["Alimentación", "Salud", "Educación", "Serv
 
 function GraficoResumenFinanzas({ registros, tipo }: { registros: Registro[]; tipo: "barras" | "linea" }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const [tooltip,setTooltip]=useState<{x:number;texto:string}|null>(null);
+  const ingresos = Array(12).fill(0), egresos = Array(12).fill(0);
+  registros.forEach((r) => { const m = new Date(`${r.fecha}T00:00:00`).getMonth(); (r.tipo === "ingreso" ? ingresos : egresos)[m] += Number(r.monto); });
+  const ahorro = ingresos.map((x, i) => x - egresos[i]);
+  const max = Math.max(1, ...ingresos, ...egresos, ...ahorro.map(Math.abs));
   useEffect(() => {
     const c = canvas.current; if (!c) return;
     const ctx = c.getContext("2d"); if (!ctx) return;
     const w = c.clientWidth || 600, h = 220; c.width = w; c.height = h; ctx.clearRect(0, 0, w, h);
-    const ingresos = Array(12).fill(0), egresos = Array(12).fill(0);
-    registros.forEach((r) => { const m = new Date(`${r.fecha}T00:00:00`).getMonth(); (r.tipo === "ingreso" ? ingresos : egresos)[m] += Number(r.monto); });
-    const ahorro = ingresos.map((x, i) => x - egresos[i]);
-    const max = Math.max(1, ...ingresos, ...egresos, ...ahorro.map(Math.abs));
     ctx.strokeStyle = "#94a3b8"; ctx.beginPath(); ctx.moveTo(38, 12); ctx.lineTo(38, 180); ctx.lineTo(w - 8, 180); ctx.stroke();
+    ctx.fillStyle="#64748b";ctx.font="9px Roboto";
+    [0,.25,.5,.75,1].forEach((p)=>{const y=180-p*150;ctx.fillText(`S/${Math.round(max*p)}`,2,y+3);});
     if (tipo === "barras") {
       const bw = Math.max(3, (w - 60) / 30);
       ingresos.forEach((v, i) => { const x = 48 + i * (w - 65) / 12; ctx.fillStyle = "#16a34a"; ctx.fillRect(x, 180 - v / max * 150, bw, v / max * 150); ctx.fillStyle = "#dc2626"; ctx.fillRect(x + bw + 2, 180 - egresos[i] / max * 150, bw, egresos[i] / max * 150); });
     } else {
-      ctx.beginPath(); ahorro.forEach((v, i) => { const x = 48 + i * (w - 65) / 11, y = 95 - v / max * 75; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 3; ctx.stroke();
+      const puntos=ahorro.map((v,i)=>({x:48+i*(w-65)/11,y:95-v/max*75}));
+      ctx.beginPath(); puntos.forEach((p,i)=>{if(!i)ctx.moveTo(p.x,p.y);else{const a=puntos[i-1],m=(a.x+p.x)/2;ctx.bezierCurveTo(m,a.y,m,p.y,p.x,p.y);}}); ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 3; ctx.stroke();
     }
     ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].forEach((m, i) => ctx.fillText(m, 42 + i * (w - 65) / 12, 202));
   }, [registros, tipo]);
-  return <canvas ref={canvas} className="canvas-finanzas" aria-label={tipo === "barras" ? "Ingresos versus egresos por mes" : "Ahorro por mes"} />;
+  return <div className="envoltura-grafico"><canvas
+    ref={canvas}
+    className="canvas-finanzas"
+    aria-label={tipo === "barras" ? "Ingresos versus egresos por mes" : "Ahorro por mes"}
+    onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect();const i=Math.max(0,Math.min(11,Math.round(((e.clientX-rect.left-48)/Math.max(rect.width-65,1))*11)));setTooltip({x:e.clientX-rect.left,texto:tipo==="barras"?`${["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]} · Ingresos S/${ingresos[i].toFixed(2)} · Egresos S/${egresos[i].toFixed(2)}`:`${["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]} · Ahorro S/${ahorro[i].toFixed(2)}`});}}
+    onPointerLeave={()=>setTooltip(null)}
+  />{tooltip&&<span className="tooltip-grafico" style={{left:tooltip.x}}>{tooltip.texto}</span>}</div>;
 }
 
 function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; onAdd: () => void; onReload: () => void }) {
@@ -1770,6 +1813,7 @@ function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; 
   const [categoriasIngreso, setCategoriasIngreso] = useState(categoriasIngresoIniciales);
   const [categoriasEgreso, setCategoriasEgreso] = useState(categoriasEgresoIniciales);
   const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
+  const [tooltipPastel,setTooltipPastel]=useState("");
   const filtrados = registros.filter((x) => String(x.fecha).startsWith(anio));
   const gastosCategoria = Array.from(
     filtrados
@@ -1801,7 +1845,7 @@ function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; 
     {pestana === "Resumen" && <>
       <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label></div>
       <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><GraficoResumenFinanzas registros={filtrados} tipo="barras" /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><GraficoResumenFinanzas registros={filtrados} tipo="linea" /></section></div>
-      <section className="tarjeta grafico-finanza pastel-finanzas"><h2>Distribución por categoría</h2><div className="pastel" style={{ background: fondoPastel }} /><div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: S/{monto.toFixed(2)}</span>)}</div></section>
+      <section className="tarjeta grafico-finanza pastel-finanzas"><h2>Distribución por categoría</h2><div className="pastel-interactivo"><div className="pastel" style={{ background: fondoPastel }} onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;let ang=(Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+450)%360;let suma=0;const elegido=gastosCategoria.find(([,m])=>{suma+=m/Math.max(totalGastos,1)*360;return ang<=suma;});setTooltipPastel(elegido?`${elegido[0]} · S/${elegido[1].toFixed(2)}`:"");}} onPointerLeave={()=>setTooltipPastel("")}/>{tooltipPastel&&<span className="tooltip-pastel">{tooltipPastel}</span>}</div><div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: S/{monto.toFixed(2)}</span>)}</div></section>
     </>}
     {(pestana === "Ingresos" || pestana === "Egresos") && <>
       <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
@@ -1858,6 +1902,38 @@ function VistaProyectosEventos({ registros, onAdd, onReload }: { registros:Regis
   </>;
 }
 
+function VistaMascotas({registros,onAdd,onReload}:{registros:Registro[];onAdd:()=>void;onReload:()=>void}) {
+  const [pestana,setPestana]=useState("Registro");
+  const [editando,setEditando]=useState<Registro|null>(null);
+  const [veterinario,setVeterinario]=useState<Registro|null>(null);
+  const [preview,setPreview]=useState<Registro|null>(null);
+  const edad=(fecha?:string)=>{if(!fecha)return"Edad sin registrar";const meses=Math.max(0,Math.floor((Date.now()-new Date(`${fecha}T00:00:00`).getTime())/2629800000));return meses>=12?`${Math.floor(meses/12)} años`:`${meses} meses`;};
+  async function editar(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!editando)return;await fetch("/api/modulos?modulo=Mascotas",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id,...Object.fromEntries(new FormData(e.currentTarget))})});setEditando(null);onReload();}
+  async function guardarVet(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!veterinario)return;const f=new FormData(e.currentTarget);f.set("accion","veterinario");f.set("mascota_id",veterinario.id);await fetch("/api/modulos?modulo=Mascotas",{method:"POST",body:f});setVeterinario(null);onReload();}
+  const documentos=registros.flatMap((m)=>(m.historial??[]).filter((h:Registro)=>h.url).map((h:Registro)=>({...h,titulo:`${m.nombre} · ${h.tipo||"Documento"}`})));
+  return <>
+    <TituloPagina etiqueta="FAMILIA Y MASCOTAS" titulo="Mascotas" descripcion="Fichas, controles veterinarios, vacunas y documentos." onAdd={onAdd} textoBoton="＋ Nueva mascota"/>
+    <section className="pestanas">{["Registro","Veterinario","Documentos"].map((x)=><button key={x} className={pestana===x?"seleccionada":""} onClick={()=>setPestana(x)}>{x}</button>)}</section>
+    {pestana==="Registro"&&<div className="grilla-mascotas">{registros.map((m)=>{
+      const proximos=(m.historial??[]).filter((h:Registro)=>h.proximo_control&&new Date(`${h.proximo_control}T00:00:00`)>=new Date()).sort((a:Registro,b:Registro)=>String(a.proximo_control).localeCompare(String(b.proximo_control)));
+      return <article className="tarjeta mascota-card" key={m.id}><div className="avatar-mascota"><PawPrint size={24}/></div><span className="etiqueta">{m.especie||"MASCOTA"}</span><h2>{m.nombre}</h2><p>{m.raza||"Sin raza"} · {edad(m.fecha_nacimiento)}</p><dl><div><dt>Sexo</dt><dd>{m.sexo||"Sin registrar"}</dd></div><div><dt>Peso</dt><dd>{m.peso_kg?`${m.peso_kg} kg`:"Sin registrar"}</dd></div><div><dt>Próxima vacuna/control</dt><dd>{proximos[0]?.proximo_control?new Date(`${proximos[0].proximo_control}T00:00:00`).toLocaleDateString("es-PE"):"Sin programar"}</dd></div></dl><div className="ficha-acciones"><button className="secundario" onClick={()=>setEditando(m)}>Editar</button><button className="primario" onClick={()=>setVeterinario(m)}>Registro veterinario</button></div></article>;
+    })}</div>}
+    {pestana==="Veterinario"&&<div className="registros-veterinarios">{registros.flatMap((m)=>(m.historial??[]).map((h:Registro)=>({...h,mascota:m.nombre}))).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).map((h,i)=><article className="tarjeta" key={`${h.id}-${i}`}><div><span className="etiqueta">{h.tipo||"ATENCIÓN"}</span><h2>{h.mascota}</h2><p>{new Date(`${h.fecha}T00:00:00`).toLocaleDateString("es-PE")} · {h.clinica||"Sin clínica"}</p></div><div><strong>{h.diagnostico||"Sin diagnóstico"}</strong><span>{h.tratamiento||h.veterinario||""}</span></div></article>)}</div>}
+    {pestana==="Documentos"&&<section className="grilla-documentos">{documentos.map((d,i)=><article className="tarjeta documento-preview" key={`${d.id}-${i}`}>{d.url?.toLowerCase().includes(".pdf")?<iframe src={`${d.url}#page=1&toolbar=0`} title={d.titulo}/>:<img src={d.url} alt=""/>}<div><strong>{d.titulo}</strong><button onClick={()=>setPreview(d)}>Ver</button></div></article>)}</section>}
+    {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar mascota</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={editar}><div className="campos"><Campo nombre="nombre" etiqueta="Nombre" valorInicial={editando.nombre} obligatorio/><Campo nombre="especie" etiqueta="Especie" valorInicial={editando.especie} obligatorio/><Campo nombre="raza" etiqueta="Raza" valorInicial={editando.raza}/><CampoSelect nombre="sexo" etiqueta="Sexo" opciones={["Macho","Hembra","No registrado"]} valorInicial={editando.sexo}/><Campo nombre="fecha_nacimiento" etiqueta="Fecha de nacimiento" tipo="date" valorInicial={editando.fecha_nacimiento}/><Campo nombre="peso_kg" etiqueta="Peso (kg)" tipo="number" valorInicial={String(editando.peso_kg||"")}/><Campo nombre="observaciones" etiqueta="Observaciones" valorInicial={editando.observaciones} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
+    {veterinario&&<div className="velo"><section className="modal"><div className="modal-cabecera"><div><span className="etiqueta">VETERINARIO</span><h2>{veterinario.nombre}</h2></div><button className="boton-icono" onClick={()=>setVeterinario(null)}>×</button></div><form onSubmit={guardarVet}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" obligatorio/><CampoSelect nombre="tipo" etiqueta="Tipo" opciones={["Consulta","Vacuna","Examen","Tratamiento","Control"]} obligatorio/><Campo nombre="clinica" etiqueta="Clínica"/><Campo nombre="veterinario" etiqueta="Veterinario"/><Campo nombre="diagnostico" etiqueta="Diagnóstico" ancho/><Campo nombre="tratamiento" etiqueta="Tratamiento" ancho/><Campo nombre="proximo_control" etiqueta="Próxima vacuna/control" tipo="date"/><Campo nombre="archivo" etiqueta="Documento" tipo="file"/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setVeterinario(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
+    {preview&&<div className="velo"><section className="modal visor-documento"><div className="modal-cabecera"><h2>{preview.titulo}</h2><button className="boton-icono" onClick={()=>setPreview(null)}>×</button></div>{preview.url?.toLowerCase().includes(".pdf")?<iframe src={preview.url} title={preview.titulo}/>:<img src={preview.url} alt={preview.titulo}/>}</section></div>}
+  </>;
+}
+
+function VistaArchivosHistoricos({registros,onAdd}:{registros:Registro[];onAdd:()=>void}) {
+  const [preview,setPreview]=useState<Registro|null>(null);
+  return <><TituloPagina etiqueta="MEMORIA FAMILIAR" titulo="Archivos históricos" descripcion="Fotografías y documentos compartidos con toda la familia." onAdd={onAdd} textoBoton="＋ Subir archivo"/>
+    <section className="grilla-documentos">{registros.map((r,i)=><article className="tarjeta documento-preview" key={`${r.titulo}-${i}`}>{r.url?.toLowerCase().includes(".pdf")?<iframe src={`${r.url}#page=1&toolbar=0`} title={r.titulo}/>:<img src={r.url} alt=""/>}<div><strong>{r.titulo}</strong><small>{r.detalle}</small><button onClick={()=>setPreview(r)}>Ver</button></div></article>)}</section>
+    {!registros.length&&<section className="tarjeta estado-vacio"><h2>Sin archivos</h2><p>Sube una fotografía o documento para compartirlo.</p></section>}
+    {preview&&<div className="velo"><section className="modal visor-documento"><div className="modal-cabecera"><h2>{preview.titulo}</h2><button className="boton-icono" onClick={()=>setPreview(null)}>×</button></div>{preview.url?.toLowerCase().includes(".pdf")?<iframe src={preview.url} title={preview.titulo}/>:<img src={preview.url} alt={preview.titulo}/>}</section></div>}</>;
+}
+
 function VistaModulo({
   titulo,
   registros,
@@ -1910,7 +1986,7 @@ function VistaModulo({
         etiqueta="GESTIÓN FAMILIAR"
         titulo={titulo}
         descripcion={descripciones[titulo]}
-        onAdd={onAdd}
+        onAdd={titulo === "Precios" ? undefined : onAdd}
         textoBoton={titulo === "Precios" ? "Agregar precio" : "Nuevo registro"}
       />
       <section className="pestanas">
@@ -1926,7 +2002,7 @@ function VistaModulo({
           : titulo === "Finanzas"
             ? ["Resumen", "Ingresos", "Gastos", "Reportes"]
             : titulo === "Precios"
-              ? ["Registros", "Producto"]
+              ? ["Registros", "Producto", "Categorías"]
               : ["Todos", "Próximos", "Documentos"]
         ).map((x) => (
           <button
@@ -1963,13 +2039,29 @@ function VistaModulo({
       {titulo === "Precios" && pestanaActiva === "Producto" && (
         <VistaProductos precios={registrosVisibles} />
       )}
-      {titulo === "Precios" && pestanaActiva === "Registros" && registrosVisibles.length > 0 && (
+      {titulo === "Precios" && pestanaActiva === "Categorías" && (
+        <section className="grilla-categorias-precio">
+          {categoriasModulo.map((categoria) => (
+            <article className="tarjeta" key={categoria}>
+              <span className="etiqueta">CATEGORÍA</span>
+              <h2>{categoria}</h2>
+              <strong>{registros.filter((r) => r.estado === categoria).length}</strong>
+              <small>precios registrados</small>
+            </article>
+          ))}
+        </section>
+      )}
+      {titulo === "Precios" && pestanaActiva === "Registros" && (
         <section className="tarjeta tabla-precios-registros">
-          <div className="fila-registro-precio cabecera"><b>Fecha</b><b>Categoría</b><b>Producto</b><b>Presentación</b><b>Precio</b><b>Tienda</b></div>
+          <div className="cabecera-registros-precio">
+            <span>Registros de precios</span>
+            <button className="primario" onClick={onAdd}>＋</button>
+          </div>
+          <div className="fila-registro-precio cabecera"><b>Fecha</b><b>Categoría</b><b>Producto</b><b>Prest.</b><b>Price</b><b>Valor</b><b>Tienda</b></div>
           {registrosVisibles.map((r, i) => <div className="fila-registro-precio" key={`${r.titulo}-${r.fecha}-${i}`}>
-            <span>{r.fecha ? new Date(r.fecha).toLocaleDateString("es-PE", { day:"2-digit", month:"2-digit" }) : "—"}</span>
+            <span className="fecha-precio">{r.fecha ? new Date(r.fecha).toLocaleDateString("es-PE", { day:"2-digit", month:"2-digit" }) : "—"}<small>{r.estado}</small></span>
             <span>{r.estado}</span><strong>{r.titulo}</strong><span>{r.presentacion}</span>
-            <span>S/{Number(r.precio).toFixed(2)}</span><span>{r.tienda}</span>
+            <span>S/{Number(r.precio).toFixed(2)}</span><span>S/{Number(r.valor).toFixed(3)}</span><span>{r.tienda}</span>
           </div>)}
         </section>
       )}
