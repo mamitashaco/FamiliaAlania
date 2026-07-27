@@ -29,9 +29,7 @@ export async function POST(request: NextRequest) {
   const descripcion = String(cuerpo.descripcion ?? "").trim();
   const categoria = String(cuerpo.categoria ?? "").trim();
   const presentacionTexto = String(cuerpo.presentacion ?? "").trim();
-  const cantidadPresentacion = Number(
-    presentacionTexto.match(/\d+(?:[.,]\d+)?/)?.[0].replace(",", "."),
-  );
+  const cantidadPresentacion = Number(presentacionTexto.replace(",", "."));
   const tienda = String(cuerpo.tienda ?? "").trim();
   const fecha = String(cuerpo.fecha ?? "").trim();
   const precio = Number(cuerpo.precio);
@@ -64,6 +62,11 @@ export async function POST(request: NextRequest) {
     if (resultado.error)
       return NextResponse.json({ error: resultado.error.message }, { status: 500 });
     producto = resultado.data;
+  } else {
+    await supabase.from("tb_productos").update({
+      categoria,
+      presentacion: String(cantidadPresentacion),
+    }).eq("id", producto.id);
   }
 
   let { data: tiendaBd } = await supabase
@@ -89,4 +92,31 @@ export async function POST(request: NextRequest) {
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ guardado: true }, { status: 201 });
+}
+
+export async function PATCH(request: NextRequest) {
+  const actual = sesion(request);
+  if (!actual) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const cuerpo = await request.json();
+  const id = String(cuerpo.id ?? "");
+  const tienda = String(cuerpo.tienda ?? "").trim();
+  const fecha = String(cuerpo.fecha ?? "").trim();
+  if (!id || !tienda || !fecha)
+    return NextResponse.json({ error: "Fecha y tienda son obligatorias" }, { status: 400 });
+  const supabase = supabaseServidor();
+  const { data: precio } = await supabase.from("tb_precios").select("registrado_por").eq("id", id).single();
+  if (actual.rol !== "administrador" && precio?.registrado_por !== actual.usuarioId)
+    return NextResponse.json({ error: "Solo puedes editar tus registros" }, { status: 403 });
+  let { data: tiendaBd } = await supabase.from("tb_tiendas").select("id").ilike("nombre", tienda).limit(1).maybeSingle();
+  if (!tiendaBd) {
+    const creada = await supabase.from("tb_tiendas").insert({ nombre: tienda }).select("id").single();
+    if (creada.error) return NextResponse.json({ error: creada.error.message }, { status: 500 });
+    tiendaBd = creada.data;
+  }
+  const { error } = await supabase.from("tb_precios").update({
+    tienda_id: tiendaBd.id,
+    registrado_en: `${fecha}T12:00:00-05:00`,
+  }).eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ guardado: true });
 }

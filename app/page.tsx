@@ -308,6 +308,7 @@ export default function Home() {
       const precio = Number(registro.precio);
       const costo = Number(registro.costo_unitario);
       return {
+        id: registro.id,
         titulo: producto.descripcion ?? "Producto",
         detalle: `${tienda.nombre ?? "Tienda"} S/${precio.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${producto.presentacion ?? ""}`,
         meta: Number.isFinite(costo)
@@ -620,6 +621,7 @@ export default function Home() {
                   : (registrosModulo[seccion] ?? datos[seccion] ?? [])
               }
               onAdd={() => setModal(`Nuevo registro · ${seccion}`)}
+              onReload={seccion === "Precios" ? cargarPrecios : undefined}
             />
           )}
         </div>
@@ -1938,14 +1940,17 @@ function VistaModulo({
   titulo,
   registros,
   onAdd,
+  onReload,
 }: {
   titulo: string;
   registros: Registro[];
   onAdd: () => void;
+  onReload?: () => void;
 }) {
   const [pestanaActiva, setPestanaActiva] = useState("Todos");
   const [busquedaModulo, setBusquedaModulo] = useState("");
   const [categoriaModulo, setCategoriaModulo] = useState("Todas");
+  const [precioEditando,setPrecioEditando]=useState<Registro|null>(null);
   const categoriasModulo = Array.from(
     new Set(registros.map((registro) => registro.estado).filter(Boolean)),
   ) as string[];
@@ -2061,10 +2066,11 @@ function VistaModulo({
           {registrosVisibles.map((r, i) => <div className="fila-registro-precio" key={`${r.titulo}-${r.fecha}-${i}`}>
             <span className="fecha-precio">{r.fecha ? new Date(r.fecha).toLocaleDateString("es-PE", { day:"2-digit", month:"2-digit" }) : "—"}<small>{r.estado}</small></span>
             <span>{r.estado}</span><strong>{r.titulo}</strong><span>{r.presentacion}</span>
-            <span>S/{Number(r.precio).toFixed(2)}</span><span>S/{Number(r.valor).toFixed(3)}</span><span>{r.tienda}</span>
+            <span>S/{Number(r.precio).toFixed(2)}</span><span>S/{Number(r.valor).toFixed(3)}</span><span className="tienda-precio">{r.tienda}<button onClick={()=>setPrecioEditando(r)}>Editar</button></span>
           </div>)}
         </section>
       )}
+      {precioEditando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><div><span className="etiqueta">EDITAR REGISTRO</span><h2>{precioEditando.titulo}</h2></div><button className="boton-icono" onClick={()=>setPrecioEditando(null)}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const valores=Object.fromEntries(new FormData(e.currentTarget));const respuesta=await fetch("/api/precios",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:precioEditando.id,...valores})});if(respuesta.ok){setPrecioEditando(null);onReload?.();}}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" valorInicial={String(precioEditando.fecha??"").slice(0,10)} obligatorio/><Campo nombre="tienda" etiqueta="Tienda" valorInicial={precioEditando.tienda} obligatorio/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setPrecioEditando(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
       {titulo !== "Precios" && (pestanaActiva === "Todos" || pestanaActiva === "Resumen" || pestanaActiva === "Ingresos" || pestanaActiva === "Gastos") && registrosPestana.length ? (
         <section className="tarjeta tabla">
           <div className="tabla-cabecera">
@@ -3140,17 +3146,19 @@ function CampoSelect({
   );
 }
 
-type FilaPrecio = { fecha:string; categoria:string; descripcion:string; presentacion:string; precio:string; tienda:string };
+type FilaPrecio = { categoria:string; descripcion:string; presentacion:string; precio:string };
 function ModalPrecios({ onClose, onSaved }: { onClose:()=>void; onSaved:()=>void }) {
-  const nuevaFila = (): FilaPrecio => ({ fecha:new Date().toLocaleDateString("sv-SE"), categoria:"", descripcion:"", presentacion:"", precio:"", tienda:"" });
+  const nuevaFila = (): FilaPrecio => ({ categoria:"", descripcion:"", presentacion:"", precio:"" });
   const [filas,setFilas]=useState<FilaPrecio[]>([nuevaFila()]);
+  const [fecha,setFecha]=useState(new Date().toLocaleDateString("sv-SE"));
+  const [tienda,setTienda]=useState("");
   const [error,setError]=useState("");
   async function guardarPrecios() {
     for (const fila of filas) {
-      if (!fila.fecha || !fila.categoria || !fila.descripcion || !fila.presentacion || !fila.precio || !fila.tienda) {
+      if (!fecha || !tienda || !fila.categoria || !fila.descripcion || !fila.presentacion || !fila.precio) {
         setError("Completa todos los campos obligatorios"); return;
       }
-      const respuesta=await fetch("/api/precios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(fila)});
+      const respuesta=await fetch("/api/precios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...fila,fecha,tienda})});
       if(!respuesta.ok){const json=await respuesta.json();setError(json.error??"No se pudo guardar");return;}
     }
     onSaved();
@@ -3159,10 +3167,14 @@ function ModalPrecios({ onClose, onSaved }: { onClose:()=>void; onSaved:()=>void
   return <div className="velo"><section className="modal modal-precios">
     <div className="modal-cabecera"><div><div className="etiqueta">NUEVO REGISTRO · PRECIOS</div><h2>Agregar precios</h2></div><button className="boton-icono" onClick={onClose}>×</button></div>
     <div className="editor-precios">
+      <div className="datos-comunes-precio">
+        <label className="fecha-icono-precio" title="Fecha del registro"><CalendarDays size={19}/><input type="date" aria-label="Fecha del registro" value={fecha} onChange={(e)=>setFecha(e.target.value)}/></label>
+        <label><span>Tienda <b className="obligatorio">*</b></span><input value={tienda} onChange={(e)=>setTienda(e.target.value)} placeholder="Tienda para todo el registro"/></label>
+      </div>
       <div className="acciones-editor"><button className="secundario" onClick={()=>setFilas([...filas,nuevaFila()])}>+ Agregar fila</button><button className="primario" onClick={guardarPrecios}>Guardar registro</button></div>
-      <div className="tabla-filas-precio"><div className="fila-precio cabecera"><b>Fecha</b><b>Categoría</b><b>Producto</b><b>Presentación</b><b>Precio</b><b>Tienda</b></div>
+      <div className="tabla-filas-precio"><div className="fila-precio cabecera"><b>Categoría</b><b>Producto</b><b>Presentación</b><b>Precio</b></div>
       {filas.map((f,i)=><div className="fila-precio" key={i}>
-        <input type="date" value={f.fecha} onChange={(e)=>cambiar(i,"fecha",e.target.value)}/><input value={f.categoria} onChange={(e)=>cambiar(i,"categoria",e.target.value)}/><input value={f.descripcion} onChange={(e)=>cambiar(i,"descripcion",e.target.value)}/><input value={f.presentacion} onChange={(e)=>cambiar(i,"presentacion",e.target.value)}/><input type="number" step="0.01" value={f.precio} onChange={(e)=>cambiar(i,"precio",e.target.value)}/><input value={f.tienda} onChange={(e)=>cambiar(i,"tienda",e.target.value)}/>
+        <input value={f.categoria} onChange={(e)=>cambiar(i,"categoria",e.target.value)}/><input value={f.descripcion} onChange={(e)=>cambiar(i,"descripcion",e.target.value)}/><input type="number" min="0.0001" step="any" value={f.presentacion} onChange={(e)=>cambiar(i,"presentacion",e.target.value)}/><input type="number" step="0.01" value={f.precio} onChange={(e)=>cambiar(i,"precio",e.target.value)}/>
       </div>)}</div>
       {error&&<p className="error-modal">{error}</p>}
     </div>
