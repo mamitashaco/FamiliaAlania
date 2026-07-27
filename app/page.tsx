@@ -200,6 +200,7 @@ export default function Home() {
   const [integrantesBd, setIntegrantesBd] = useState<Integrante[]>([]);
   const [precios, setPrecios] = useState<Registro[]>([]);
   const [registrosModulo, setRegistrosModulo] = useState<Record<string, Registro[]>>({});
+  const [proyectosAbiertos, setProyectosAbiertos] = useState(0);
   const [usuarioId, setUsuarioId] = useState("");
   const [rolSesion, setRolSesion] = useState<"administrador" | "integrante">(
     "integrante",
@@ -208,13 +209,17 @@ export default function Home() {
   const [fichaDesdeSalud, setFichaDesdeSalud] = useState(false);
   const [versionSalud, setVersionSalud] = useState(0);
   const [menuCuenta, setMenuCuenta] = useState(false);
+  const cargasModulo = useRef<Record<string, number>>({});
 
-  async function cargarDatos() {
-    const respuesta = await fetch("/api/datos");
+  async function cargarDatos(forzar = false) {
+    const respuesta = await fetch("/api/datos", {
+      cache: forzar ? "no-store" : "default",
+    });
     if (!respuesta.ok) return;
     const json = await respuesta.json();
     setUsuarioId(json.usuarioId);
     setRolSesion(json.rol);
+    setProyectosAbiertos(json.proyectosAbiertos ?? 0);
     setIntegrantesBd(
       (json.integrantes ?? []).map((p: Record<string, any>) => {
         const partes = p.nombre_completo.split(" ");
@@ -324,12 +329,15 @@ export default function Home() {
     }));
   }
 
-  async function cargarModulo(nombre: string) {
+  async function cargarModulo(nombre: string, forzar = false) {
     if (nombre === "Precios") return cargarPrecios();
     if (["Inicio", "Integrantes", "Salud"].includes(nombre)) return;
+    if (!forzar && Date.now() - (cargasModulo.current[nombre] ?? 0) < 30_000)
+      return;
     const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(nombre)}`);
     if (!respuesta.ok) return;
     const json = await respuesta.json();
+    cargasModulo.current[nombre] = Date.now();
     setRegistrosModulo((actual) => ({ ...actual, [nombre]: json.registros ?? [] }));
   }
 
@@ -408,7 +416,7 @@ export default function Home() {
         setAviso(json.error ?? "No se pudo guardar el registro");
         return;
       }
-      await cargarModulo(seccion);
+      await cargarModulo(seccion, true);
     }
     setModal(null);
     setAviso("Registro guardado correctamente");
@@ -564,6 +572,7 @@ export default function Home() {
                   .find((p) => p.usuarioId === usuarioId)
                   ?.nombre.split(" ")[0] ?? "Integrante"
               }
+              proyectosAbiertos={proyectosAbiertos}
             />
           ) : seccion === "Integrantes" ? (
             <VistaIntegrantes
@@ -576,36 +585,36 @@ export default function Home() {
               onOpen={setFicha}
             />
           ) : seccion === "Salud" ? (
-            <VistaSalud key={versionSalud} onChanged={cargarDatos} onEditProfile={(id) => {
+            <VistaSalud key={versionSalud} onChanged={() => cargarDatos(true)} onEditProfile={(id) => {
               const persona = integrantesVisibles.find((p) => p.id === id);
               if (persona) { setFichaDesdeSalud(true); setFicha(persona); }
             }} />
           ) : seccion === "Configuración" ? (
-            <VistaConfiguracion onChanged={cargarDatos} />
+            <VistaConfiguracion onChanged={() => cargarDatos(true)} />
           ) : seccion === "Educación" || seccion === "Seguros" ? (
             <VistaDocumentosModulo
               titulo={seccion}
               registros={registrosModulo[seccion] ?? []}
               onAdd={() => setModal(`Nuevo registro · ${seccion}`)}
-              onReload={() => cargarModulo(seccion)}
+              onReload={() => cargarModulo(seccion, true)}
             />
           ) : seccion === "Finanzas" ? (
             <VistaFinanzas
               registros={registrosModulo.Finanzas ?? []}
               onAdd={() => setModal("Nuevo registro · Finanzas")}
-              onReload={() => cargarModulo("Finanzas")}
+              onReload={() => cargarModulo("Finanzas", true)}
             />
           ) : seccion === "Proyectos y eventos" ? (
             <VistaProyectosEventos
               registros={registrosModulo["Proyectos y eventos"] ?? []}
               onAdd={() => setModal("Nuevo registro · Proyectos y eventos")}
-              onReload={() => cargarModulo("Proyectos y eventos")}
+              onReload={() => cargarModulo("Proyectos y eventos", true)}
             />
           ) : seccion === "Mascotas" ? (
             <VistaMascotas
               registros={registrosModulo.Mascotas ?? []}
               onAdd={() => setModal("Nuevo registro · Mascotas")}
-              onReload={() => cargarModulo("Mascotas")}
+              onReload={() => cargarModulo("Mascotas", true)}
             />
           ) : seccion === "Archivos históricos" ? (
             <VistaArchivosHistoricos
@@ -638,7 +647,7 @@ export default function Home() {
           onClose={() => setModal(null)}
           onSaved={async () => {
             setModal(null);
-            await cargarDatos();
+            await cargarDatos(true);
             setAviso("Integrante creado correctamente");
             window.setTimeout(() => setAviso(""), 2600);
           }}
@@ -674,7 +683,7 @@ export default function Home() {
           soloSalud={fichaDesdeSalud}
           onSaved={async () => {
             setFicha(null);
-            await cargarDatos();
+            await cargarDatos(true);
             if (fichaDesdeSalud) {
               setVersionSalud((actual) => actual + 1);
               setSeccion("Salud");
@@ -694,21 +703,27 @@ function Inicio({
   onNavigate,
   onAdd,
   nombre,
+  proyectosAbiertos,
 }: {
   personas: typeof integrantes;
   onNavigate: (s: string) => void;
   onAdd: () => void;
   nombre: string;
+  proyectosAbiertos: number;
 }) {
   const hora = new Date().getHours();
   const saludo =
     hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
-  const proximas = calcularProximasFechas(personas);
+  const proximas = useMemo(() => calcularProximasFechas(personas), [personas]);
   const hoyIso = new Date().toISOString().slice(0, 10);
-  const recordatorios = personas.flatMap((p) =>
-    p.medicamentos
-      .filter((m) => m.activo && (!m.fecha_fin || m.fecha_fin >= hoyIso))
-      .map((m) => ({ ...m, persona: p.nombre.split(" ")[0] })),
+  const recordatorios = useMemo(
+    () =>
+      personas.flatMap((p) =>
+        p.medicamentos
+          .filter((m) => m.activo && (!m.fecha_fin || m.fecha_fin >= hoyIso))
+          .map((m) => ({ ...m, persona: p.nombre.split(" ")[0] })),
+      ),
+    [personas, hoyIso],
   );
   return (
     <>
@@ -725,16 +740,11 @@ function Inicio({
         </button>
       </section>
       <section className="metricas">
-        <article>
-          <span>Integrantes registrados</span>
-          <strong>{personas.length}</strong>
-          <small>Datos obtenidos de Supabase</small>
-        </article>
-        <article>
-          <span>Próximas fechas</span>
-          <strong>{proximas.length}</strong>
-          <small>En los siguientes 45 días</small>
-        </article>
+        <button className="metrica-proyectos" onClick={() => onNavigate("Proyectos y eventos")}>
+          <span>Proyectos y eventos abiertos</span>
+          <strong>{proyectosAbiertos}</strong>
+          <small>Ver planificación familiar →</small>
+        </button>
       </section>
       <div className="grilla-inicio una-columna">
         {proximas.length > 0 && (

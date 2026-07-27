@@ -13,13 +13,34 @@ export async function GET(request: NextRequest) {
   if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const supabase = supabaseServidor();
-  const { data: integrantes, error } = await supabase
+  const consultaIntegrantes = supabase
     .from("tb_integrantes")
-    .select("*,tb_informacion_laboral(*),tb_salud_perfil(*),tb_medicamentos(*),tb_cuentas_financieras(*),tb_contactos_emergencia(*),tb_fechas_importantes(*)")
+    .select(
+      "id,usuario_id,nombre_completo,dni,fecha_nacimiento,lugar_nacimiento,estado_civil,telefono,correo_electronico,departamento,provincia,distrito,direccion_actual,observaciones,creado_en,actualizado_en," +
+      "tb_informacion_laboral(empresa,cargo,direccion_trabajo,telefono_laboral)," +
+      "tb_salud_perfil(tipo_sangre,seguro_medico,alergias,enfermedades_relevantes,medicacion_habitual,medico_referencia)," +
+      "tb_medicamentos(nombre,frecuencia,fecha_inicio,fecha_fin,activo)," +
+      "tb_cuentas_financieras(banco_principal,tipo_cuenta,observaciones)," +
+      "tb_contactos_emergencia(nombre,relacion,telefono)," +
+      "tb_fechas_importantes(titulo,tipo,fecha,recurrente_anual)",
+    )
     .order("nombre_completo");
+  const consultaProyectos = supabase
+    .from("tb_viajes_eventos")
+    .select("id", { count: "exact", head: true })
+    .or("estado.is.null,estado.neq.Cerrado");
+  const consultaUsuarios = sesion.rol === "administrador"
+    ? supabase.from("tb_usuarios").select("id,codigo")
+    : Promise.resolve({ data: [] as Array<{ id: string; codigo: string }>, error: null });
+  const [
+    { data: integrantes, error },
+    { count: proyectosAbiertos },
+    { data: usuarios },
+  ] = await Promise.all([consultaIntegrantes, consultaProyectos, consultaUsuarios]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const conEdad = integrantes?.map((integrante) => {
+  const listaIntegrantes = (integrantes ?? []) as unknown as Array<Record<string, any>>;
+  const conEdad: Array<Record<string, any>> = listaIntegrantes.map((integrante): Record<string, any> => {
     if (!integrante.fecha_nacimiento) return { ...integrante, edad: null };
     const nacimiento = new Date(`${integrante.fecha_nacimiento}T00:00:00`);
     const hoy = new Date();
@@ -27,15 +48,24 @@ export async function GET(request: NextRequest) {
     if (hoy.getMonth() < nacimiento.getMonth() || (hoy.getMonth() === nacimiento.getMonth() && hoy.getDate() < nacimiento.getDate())) edad--;
     return { ...integrante, edad };
   });
-  const { data: usuarios } = sesion.rol === "administrador"
-    ? await supabase.from("tb_usuarios").select("id,codigo")
-    : { data: [] };
   const codigos = new Map((usuarios ?? []).map((u) => [u.id, u.codigo.trim()]));
   const datos = conEdad?.map((integrante) => ({
     ...integrante,
     codigo_acceso: sesion.rol === "administrador" && integrante.usuario_id ? codigos.get(integrante.usuario_id) ?? null : null,
   }));
-  return NextResponse.json({ integrantes: datos, usuarioId: sesion.usuarioId, rol: sesion.rol });
+  return NextResponse.json(
+    {
+      integrantes: datos,
+      usuarioId: sesion.usuarioId,
+      rol: sesion.rol,
+      proyectosAbiertos: proyectosAbiertos ?? 0,
+    },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=15, stale-while-revalidate=30",
+      },
+    },
+  );
 }
 
 export async function POST(request: NextRequest) {
