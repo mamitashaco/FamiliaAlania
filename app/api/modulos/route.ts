@@ -84,6 +84,13 @@ export async function GET(request: NextRequest) {
         ...c, usuario: nombresIntegrante.get(c.integrante_id) ?? "Integrante",
       })),
     }));
+  } else if (modulo === "Proyectos y eventos") {
+    const { data } = await supabase.from("tb_viajes_eventos").select("creado_por").eq("id", id).single();
+    if (actual.rol !== "administrador" && data?.creado_por !== actual.usuarioId)
+      return NextResponse.json({ error: "Solo el creador puede eliminar este proyecto" }, { status: 403 });
+    await supabase.from("tb_eventos_compromisos").delete().eq("viaje_evento_id", id);
+    const { error } = await supabase.from("tb_viajes_eventos").delete().eq("id", id);
+    if (error) return NextResponse.json({ error:error.message }, { status:500 });
   } else if (modulo === "Mascotas") {
     const r = await supabase.from("tb_mascotas").select("*,tb_historial_veterinario(*)").order("nombre");
     error = r.error; registros = await Promise.all((r.data ?? []).map(async (x) => ({

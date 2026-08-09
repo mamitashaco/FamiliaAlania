@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, CalendarDays, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards } from "lucide-react";
+import { Archive, CalendarDays, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards, Plus, Stethoscope } from "lucide-react";
 
 type Registro = {
   titulo: string;
@@ -196,6 +196,7 @@ export default function Home() {
   const [oscuro, setOscuro] = useState(false);
   const [buscar, setBuscar] = useState("");
   const [modal, setModal] = useState<string | null>(null);
+  const [modalSeccion, setModalSeccion] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
   const [integrantesBd, setIntegrantesBd] = useState<Integrante[]>([]);
   const [precios, setPrecios] = useState<Registro[]>([]);
@@ -401,7 +402,8 @@ export default function Home() {
 
   async function guardar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (seccion === "Precios") {
+    const destino = modalSeccion ?? seccion;
+    if (destino === "Precios") {
       const valores = Object.fromEntries(new FormData(e.currentTarget));
       const respuesta = await fetch("/api/precios", {
         method: "POST",
@@ -414,8 +416,8 @@ export default function Home() {
         return;
       }
       await cargarPrecios();
-    } else if (!["Inicio", "Integrantes", "Salud", "Configuración"].includes(seccion)) {
-      const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(seccion)}`, {
+    } else if (!["Inicio", "Integrantes", "Salud", "Configuración"].includes(destino)) {
+      const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(destino)}`, {
         method: "POST",
         body: new FormData(e.currentTarget),
       });
@@ -424,9 +426,9 @@ export default function Home() {
         setAviso(json.error ?? "No se pudo guardar el registro");
         return;
       }
-      await cargarModulo(seccion, true);
+      await cargarModulo(destino, true);
     }
-    setModal(null);
+    setModal(null); setModalSeccion(null);
     setAviso("Registro guardado correctamente");
     window.setTimeout(() => setAviso(""), 2600);
   }
@@ -574,7 +576,7 @@ export default function Home() {
               personas={integrantesVisibles}
               proyectos={registrosModulo["Proyectos y eventos"] ?? []}
               onNavigate={abrirSeccion}
-              onQuick={(accion) => { setAccionRapida(accion); if (accion === "precio") { abrirSeccion("Precios"); setModal("Nuevo registro · Precios"); } else abrirSeccion(accion === "historial" ? "Salud" : "Finanzas"); }}
+              onQuick={(accion) => { const propia=integrantesVisibles.find((p)=>p.usuarioId===usuarioId); if (accion === "historial") { setModal("Nuevo historial médico"); return; } setModalSeccion(accion === "precio" ? "Precios" : "Finanzas"); setModal(accion === "precio" ? "Nuevo registro · Precios" : accion === "ingreso" ? "Nuevo ingreso" : "Nuevo egreso"); }}
               onAdd={() => setModal("Agregar registro")}
               nombre={
                 integrantesVisibles
@@ -665,21 +667,21 @@ export default function Home() {
         />
       )}
       {modal && modal !== "Nuevo integrante" && (
-        seccion === "Precios" ? (
+        (modalSeccion ?? seccion) === "Precios" ? (
           <ModalPrecios
-            onClose={() => setModal(null)}
+            onClose={() => { setModal(null); setModalSeccion(null); }}
             onSaved={async () => {
-              setModal(null);
+              setModal(null); setModalSeccion(null);
               await cargarPrecios();
               setAviso("Precios guardados correctamente");
               window.setTimeout(() => setAviso(""), 2600);
             }}
           />
         ) : (
-          <Modal
+          modal === "Nuevo historial médico" ? <ModalHistorialRapido integranteId={integrantesVisibles.find((p)=>p.usuarioId===usuarioId)?.id ?? ""} onClose={() => setModal(null)} onSaved={() => { setModal(null); setVersionSalud((x)=>x+1); }} /> : <Modal
             titulo={modal}
-            seccion={seccion}
-            onClose={() => setModal(null)}
+            seccion={modalSeccion ?? seccion}
+            onClose={() => { setModal(null); setModalSeccion(null); }}
             onSave={guardar}
           />
         )
@@ -750,22 +752,13 @@ function Inicio({
           </h1>
           <p>Información familiar centralizada y protegida.</p>
         </div>
-        <button className="primario" onClick={onAdd}>
-          ＋ Agregar registro
-        </button>
-      </section>
-      <section className="metricas">
-        <button className="metrica-proyectos" onClick={() => onNavigate("Proyectos y eventos")}>
-          <span>Proyectos y eventos abiertos</span>
-          <strong>{proyectosAbiertos}</strong>
-          <small>Ver planificación familiar →</small>
-        </button>
       </section>
       <div className="grilla-inicio una-columna">
         <section className="tarjeta accesos-rapidos">
           <span className="etiqueta">ACCESO RÁPIDO</span>
-          <div className="ficha-acciones"><button className="secundario" onClick={() => onQuick("ingreso")}>＋ Ingreso</button><button className="secundario" onClick={() => onQuick("egreso")}>＋ Egreso</button><button className="secundario" onClick={() => onQuick("precio")}>＋ Precio</button><button className="secundario" onClick={() => onQuick("historial")}>＋ Historial médico</button></div>
+          <div className="ficha-acciones"><article><WalletCards size={20}/><strong>Finanzas</strong><span><button onClick={() => onQuick("ingreso")} aria-label="Agregar ingreso"><Plus size={16}/> Ingreso</button><button onClick={() => onQuick("egreso")} aria-label="Agregar egreso"><Plus size={16}/> Egreso</button></span></article><article><ShoppingBasket size={20}/><strong>Precio</strong><button onClick={() => onQuick("precio")} aria-label="Agregar precio"><Plus size={16}/> Agregar</button></article><article><Stethoscope size={20}/><strong>Historial médico</strong><button onClick={() => onQuick("historial")} aria-label="Agregar historial médico"><Plus size={16}/> Agregar</button></article></div>
         </section>
+        <section className="metricas"><button className="metrica-proyectos" onClick={() => onNavigate("Proyectos y eventos")}><span>Proyectos y eventos abiertos</span><strong>{proyectosAbiertos}</strong><small>Ver planificación familiar →</small></button></section>
         {proximas.length > 0 && (
           <section>
             <div className="cabecera-seccion">
@@ -1673,7 +1666,6 @@ function GraficoPrecios({ registros }: { registros: Registro[] }) {
 }
 
 function VistaProductos({ precios }: { precios: Registro[] }) {
-  const [seleccion, setSeleccion] = useState("");
   const grupos = Array.from(
     precios.reduce((mapa, precio) => {
       const clave = claveProducto(precio.titulo);
@@ -1685,8 +1677,7 @@ function VistaProductos({ precios }: { precios: Registro[] }) {
     return <section className="tarjeta estado-vacio"><h2>Sin productos</h2><p>Agrega precios para comparar tiendas e historial.</p></section>;
   return (
     <div className="productos-agrupados">
-      <label className="filtro-usuario">Producto<select value={seleccion} onChange={(e) => setSeleccion(e.target.value)}><option value="">Ninguno</option>{grupos.map(([clave, lista]) => <option key={clave} value={clave}>{lista[0].titulo}</option>)}</select></label>
-      {grupos.filter(([clave]) => clave === seleccion).map(([clave, lista]) => {
+      {grupos.map(([clave, lista]) => {
         const preciosValidos = lista.map((x) => Number(x.precio)).filter(Number.isFinite);
         const valoresValidos = lista.map((x) => Number(x.valor)).filter(Number.isFinite);
         const mejor = [...lista].sort((a, b) => Number(a.valor) - Number(b.valor))[0];
@@ -1918,6 +1909,11 @@ function VistaProyectosEventos({ registros, onAdd, onReload }: { registros:Regis
     const respuesta=await fetch("/api/modulos?modulo=Proyectos%20y%20eventos",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(cuerpo)});
     if(respuesta.ok){setEditando(null);onReload();}
   }
+  async function eliminar(id:string) {
+    if (!confirm("¿Eliminar este proyecto o evento?")) return;
+    const respuesta=await fetch("/api/modulos?modulo=Proyectos%20y%20eventos",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});
+    if(respuesta.ok) onReload();
+  }
   async function aportar(e:FormEvent<HTMLFormElement>) {
     e.preventDefault(); if(!participando)return;
     const form=new FormData(e.currentTarget); form.set("accion","participar"); form.set("proyecto_id",participando.id);
@@ -1937,7 +1933,7 @@ function VistaProyectosEventos({ registros, onAdd, onReload }: { registros:Regis
         <div className="meta-proyecto"><div><span>Meta financiera</span><b>S/{meta.toFixed(2)}</b></div><div><span>Comprometido</span><b>S/{comprometido.toFixed(2)}</b></div><div><span>Abonado</span><b>S/{abonado.toFixed(2)}</b></div></div>
         <div className="barra-meta"><i style={{width:`${porcentaje}%`}}/></div>
         <div className="compromisos-proyecto">{(r.compromisos??[]).map((x:Record<string,any>)=><div key={x.id}><strong>{x.usuario}</strong><span>{x.actividad||x.comentario||`Aporte S/${Number(x.monto_comprometido).toFixed(2)}`}</span></div>)}</div>
-        <div className="ficha-acciones"><button className="secundario" onClick={()=>setParticipando(r)}>Sumarme / aportar</button>{r.propio&&<><button className="secundario" onClick={()=>setEditando(r)}>Editar</button>{r.estado!=="Cerrado"&&<button className="primario" onClick={()=>actualizar({id:r.id,cerrar:true})}>Cerrar proyecto</button>}</>}</div>
+        <div className="ficha-acciones"><button className="secundario" onClick={()=>setParticipando(r)}>Sumarme / aportar</button>{r.propio&&<><button className="secundario" onClick={()=>setEditando(r)}>Editar</button>{r.estado!=="Cerrado"&&<button className="primario" onClick={()=>actualizar({id:r.id,cerrar:true})}>Cerrar proyecto</button>}<button className="secundario" onClick={()=>eliminar(r.id)}>Eliminar</button></>}</div>
       </article>;
     })}</div>
     {!registros.length&&<section className="tarjeta estado-vacio"><h2>Sin proyectos o eventos</h2><p>Crea el primero para organizarlo con la familia.</p></section>}
@@ -1991,7 +1987,7 @@ function VistaModulo({
 }) {
   const [pestanaActiva, setPestanaActiva] = useState("Todos");
   const [busquedaModulo, setBusquedaModulo] = useState("");
-  const [categoriaModulo, setCategoriaModulo] = useState("Todas");
+  const [categoriaModulo, setCategoriaModulo] = useState("Ninguno");
   const [precioEditando,setPrecioEditando]=useState<Registro|null>(null);
   const [categoriaEditando,setCategoriaEditando]=useState("");
   const categoriasModulo = Array.from(
@@ -2002,7 +1998,7 @@ function VistaModulo({
       ? registros.filter(
           (registro) =>
             registro.titulo.toLowerCase().includes(busquedaModulo.toLowerCase()) &&
-            (categoriaModulo === "Todas" || registro.estado === categoriaModulo),
+            (categoriaModulo === "Ninguno" || registro.estado === categoriaModulo),
         )
       : registros;
   useEffect(() => {
@@ -2077,7 +2073,7 @@ function VistaModulo({
             value={categoriaModulo}
             onChange={(e) => setCategoriaModulo(e.target.value)}
           >
-            <option>Todas</option>
+            <option>Ninguno</option>
             {categoriasModulo.map((categoria) => (
               <option key={categoria}>{categoria}</option>
             ))}
@@ -3245,6 +3241,10 @@ function ModalPrecios({ onClose, onSaved }: { onClose:()=>void; onSaved:()=>void
       {error&&<p className="error-modal">{error}</p>}
     </div>
   </section></div>;
+}
+
+function ModalHistorialRapido({ integranteId, onClose, onSaved }: { integranteId: string; onClose: () => void; onSaved: () => void }) {
+  return <div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><div><span className="etiqueta">HISTORIAL MÉDICO</span><h2>Nuevo registro</h2></div><button className="boton-icono" onClick={onClose}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const valores=Object.fromEntries(new FormData(e.currentTarget));const r=await fetch("/api/salud",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({integrante_id:integranteId,seccion:"historial",...valores})});if(r.ok)onSaved();}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" obligatorio/><Campo nombre="diagnostico" etiqueta="Diagnóstico" obligatorio ancho/><Campo nombre="tratamiento" etiqueta="Tratamiento" ancho/><Campo nombre="observaciones" etiqueta="Observaciones" ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={onClose}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>;
 }
 
 function Modal({
