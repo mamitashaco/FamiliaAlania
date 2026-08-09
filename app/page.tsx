@@ -68,9 +68,9 @@ type Integrante = {
 };
 
 const navegacion = [
-  ["Inicio", HomeIcon], ["Integrantes", Users], ["Salud", HeartPulse], ["Finanzas", WalletCards],
-  ["Precios", ShoppingBasket], ["Educación", GraduationCap], ["Seguros", ShieldCheck],
-  ["Proyectos y eventos", Plane], ["Mascotas", PawPrint], ["Archivos históricos", Archive],
+  ["Inicio", HomeIcon], ["Salud", HeartPulse], ["Finanzas", WalletCards], ["Precios", ShoppingBasket],
+  ["Proyectos y eventos", Plane], ["Integrantes", Users], ["Mascotas", PawPrint], ["Educación", GraduationCap],
+  ["Seguros", ShieldCheck], ["Archivos históricos", Archive],
 ] as const;
 
 const integrantes: Integrante[] = [];
@@ -211,6 +211,11 @@ export default function Home() {
   const [menuCuenta, setMenuCuenta] = useState(false);
   const cargasModulo = useRef<Record<string, number>>({});
 
+  function abrirSeccion(nombre: string) {
+    setSeccion(nombre);
+    cargarModulo(nombre, true);
+  }
+
   async function cargarDatos(forzar = false) {
     const respuesta = await fetch("/api/datos", {
       cache: forzar ? "no-store" : "default",
@@ -348,6 +353,7 @@ export default function Home() {
         if (r.autenticado) {
           setSesion(true);
           cargarDatos();
+          cargarModulo("Proyectos y eventos");
         }
       })
       .catch(() => undefined);
@@ -382,6 +388,7 @@ export default function Home() {
     setError("");
     setSesion(true);
     await cargarDatos();
+    await cargarModulo("Proyectos y eventos");
   }
 
   async function cerrarSesion() {
@@ -498,11 +505,10 @@ export default function Home() {
                 key={nombre}
                 className={seccion === nombre ? "activo" : ""}
                 onClick={() => {
-                  setSeccion(nombre);
-                  cargarModulo(nombre);
+                  abrirSeccion(nombre);
                 }}
               >
-                <IconoNav size={15} strokeWidth={1.8} /> {nombre}
+                <IconoNav size={15} strokeWidth={1.8} /> {nombre === "Proyectos y eventos" ? "Proyectos" : nombre === "Archivos históricos" ? "Archivos Históricos" : nombre}
               </button>
             ))}
           </nav>
@@ -565,7 +571,8 @@ export default function Home() {
           {seccion === "Inicio" ? (
             <Inicio
               personas={integrantesVisibles}
-              onNavigate={setSeccion}
+              proyectos={registrosModulo["Proyectos y eventos"] ?? []}
+              onNavigate={abrirSeccion}
               onAdd={() => setModal("Agregar registro")}
               nombre={
                 integrantesVisibles
@@ -700,12 +707,14 @@ export default function Home() {
 
 function Inicio({
   personas,
+  proyectos,
   onNavigate,
   onAdd,
   nombre,
   proyectosAbiertos,
 }: {
   personas: typeof integrantes;
+  proyectos: Registro[];
   onNavigate: (s: string) => void;
   onAdd: () => void;
   nombre: string;
@@ -747,6 +756,10 @@ function Inicio({
         </button>
       </section>
       <div className="grilla-inicio una-columna">
+        <section className="tarjeta accesos-rapidos">
+          <span className="etiqueta">ACCESO RÁPIDO</span>
+          <div className="ficha-acciones"><button className="secundario" onClick={() => onNavigate("Finanzas")}>＋ Ingreso</button><button className="secundario" onClick={() => onNavigate("Finanzas")}>＋ Egreso</button><button className="secundario" onClick={() => onNavigate("Precios")}>＋ Precio</button><button className="secundario" onClick={() => onNavigate("Salud")}>＋ Historial médico</button></div>
+        </section>
         {proximas.length > 0 && (
           <section>
             <div className="cabecera-seccion">
@@ -775,6 +788,13 @@ function Inicio({
             </div>
           </section>
         )}
+        <section>
+          <div className="cabecera-seccion"><div><h2>Proyectos y eventos activos</h2><p>Planificación familiar</p></div><button onClick={() => onNavigate("Proyectos y eventos")}>Ver todos →</button></div>
+          <div className="tarjeta lista-personas">
+            {proyectos.filter((p) => p.estado !== "Cerrado").slice(0, 3).map((p) => <button key={p.id} onClick={() => onNavigate("Proyectos y eventos")}><span className="avatar">PE</span><span><strong>{p.titulo}</strong><small>{p.detalle}</small></span><i>›</i></button>)}
+            {!proyectos.filter((p) => p.estado !== "Cerrado").length && <p className="muted">No hay proyectos abiertos.</p>}
+          </div>
+        </section>
         {recordatorios.length > 0 && (
           <section>
             <div className="cabecera-seccion">
@@ -1646,6 +1666,7 @@ function GraficoPrecios({ registros }: { registros: Registro[] }) {
 }
 
 function VistaProductos({ precios }: { precios: Registro[] }) {
+  const [seleccion, setSeleccion] = useState("");
   const grupos = Array.from(
     precios.reduce((mapa, precio) => {
       const clave = claveProducto(precio.titulo);
@@ -1657,7 +1678,8 @@ function VistaProductos({ precios }: { precios: Registro[] }) {
     return <section className="tarjeta estado-vacio"><h2>Sin productos</h2><p>Agrega precios para comparar tiendas e historial.</p></section>;
   return (
     <div className="productos-agrupados">
-      {grupos.map(([clave, lista]) => {
+      <label className="filtro-usuario">Producto<select value={seleccion} onChange={(e) => setSeleccion(e.target.value)}><option value="">Ninguno</option>{grupos.map(([clave, lista]) => <option key={clave} value={clave}>{lista[0].titulo}</option>)}</select></label>
+      {grupos.filter(([clave]) => clave === seleccion).map(([clave, lista]) => {
         const preciosValidos = lista.map((x) => Number(x.precio)).filter(Number.isFinite);
         const valoresValidos = lista.map((x) => Number(x.valor)).filter(Number.isFinite);
         const mejor = [...lista].sort((a, b) => Number(a.valor) - Number(b.valor))[0];
@@ -1826,6 +1848,7 @@ function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; 
   const [categoriasEgreso, setCategoriasEgreso] = useState(categoriasEgresoIniciales);
   const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
   const [tooltipPastel,setTooltipPastel]=useState("");
+  const [editando,setEditando]=useState<Registro|null>(null);
   const filtrados = registros.filter((x) => String(x.fecha).startsWith(anio));
   const gastosCategoria = Array.from(
     filtrados
@@ -1867,10 +1890,11 @@ function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; 
           <select value={f.categoria} onChange={(e) => setFilas(filas.map((x,n)=>n===i?{...x,categoria:e.target.value,fecha:x.fecha||new Date().toLocaleDateString("sv-SE")}:x))}><option value="">Selecciona</option>{categorias.map((x)=><option key={x}>{x}</option>)}</select>
           <input value={f.descripcion} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,descripcion:e.target.value}:x))}/><input type="number" step="0.01" value={f.monto} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,monto:e.target.value}:x))}/><input value={f.observaciones} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,observaciones:e.target.value}:x))}/><span>Usuario actual</span>
         </div>)}
-        {registros.filter((x)=>x.tipo===tipo).map((r)=><div className="fila-finanza guardada" key={r.id}><span>{new Date(`${r.fecha}T00:00:00`).toLocaleDateString("es-PE")}</span><span>{r.categoria}</span><span>{r.descripcion}</span><span>S/{Number(r.monto).toFixed(2)}</span><span>{r.observaciones}</span><span>{r.usuario}</span></div>)}
+        {registros.filter((x)=>x.tipo===tipo).map((r)=><div className="fila-finanza guardada" key={r.id}><span>{new Date(`${r.fecha}T00:00:00`).toLocaleDateString("es-PE")}</span><span>{r.categoria}</span><span>{r.descripcion}</span><span>S/{Number(r.monto).toFixed(2)}</span><span>{r.observaciones}</span><span>{r.usuario} {(r.propio || true) && <button className="secundario" onClick={()=>setEditando(r)}>Editar</button>}</span></div>)}
       </div>
     </>}
     {pestana === "Categorías" && <div className="grilla-categorias"><ListaCategorias titulo="Ingresos" categorias={categoriasIngreso} setCategorias={setCategoriasIngreso}/><ListaCategorias titulo="Egresos" categorias={categoriasEgreso} setCategorias={setCategoriasEgreso}/></div>}
+    {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar registro</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const r=await fetch("/api/modulos?modulo=Finanzas",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id,...Object.fromEntries(new FormData(e.currentTarget))})});if(r.ok){setEditando(null);onReload();}}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" valorInicial={editando.fecha} obligatorio/><Campo nombre="categoria" etiqueta="Categoría" valorInicial={editando.categoria} obligatorio/><Campo nombre="descripcion" etiqueta="Detalle" valorInicial={editando.descripcion} obligatorio/><Campo nombre="monto" etiqueta="Importe" tipo="number" valorInicial={String(editando.monto)} obligatorio/><Campo nombre="observaciones" etiqueta="Observación" valorInicial={editando.observaciones} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button type="button" className="secundario" onClick={async()=>{if(confirm("¿Eliminar este registro?")){const r=await fetch("/api/modulos?modulo=Finanzas",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id})});if(r.ok){setEditando(null);onReload();}}}}>Eliminar</button><button className="primario">Guardar</button></div></form></section></div>}
   </>;
 }
 
@@ -1932,7 +1956,7 @@ function VistaMascotas({registros,onAdd,onReload}:{registros:Registro[];onAdd:()
     })}</div>}
     {pestana==="Veterinario"&&<div className="registros-veterinarios">{registros.flatMap((m)=>(m.historial??[]).map((h:Registro)=>({...h,mascota:m.nombre}))).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).map((h,i)=><article className="tarjeta" key={`${h.id}-${i}`}><div><span className="etiqueta">{h.tipo||"ATENCIÓN"}</span><h2>{h.mascota}</h2><p>{new Date(`${h.fecha}T00:00:00`).toLocaleDateString("es-PE")} · {h.clinica||"Sin clínica"}</p></div><div><strong>{h.diagnostico||"Sin diagnóstico"}</strong><span>{h.tratamiento||h.veterinario||""}</span></div></article>)}</div>}
     {pestana==="Documentos"&&<section className="grilla-documentos">{documentos.map((d,i)=><article className="tarjeta documento-preview" key={`${d.id}-${i}`}>{d.url?.toLowerCase().includes(".pdf")?<iframe src={`${d.url}#page=1&toolbar=0`} title={d.titulo}/>:<img src={d.url} alt=""/>}<div><strong>{d.titulo}</strong><button onClick={()=>setPreview(d)}>Ver</button></div></article>)}</section>}
-    {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar mascota</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={editar}><div className="campos"><Campo nombre="nombre" etiqueta="Nombre" valorInicial={editando.nombre} obligatorio/><Campo nombre="especie" etiqueta="Especie" valorInicial={editando.especie} obligatorio/><Campo nombre="raza" etiqueta="Raza" valorInicial={editando.raza}/><CampoSelect nombre="sexo" etiqueta="Sexo" opciones={["Macho","Hembra","No registrado"]} valorInicial={editando.sexo}/><Campo nombre="fecha_nacimiento" etiqueta="Fecha de nacimiento" tipo="date" valorInicial={editando.fecha_nacimiento}/><Campo nombre="peso_kg" etiqueta="Peso (kg)" tipo="number" valorInicial={String(editando.peso_kg||"")}/><Campo nombre="observaciones" etiqueta="Observaciones" valorInicial={editando.observaciones} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
+    {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar mascota</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={editar}><div className="campos"><Campo name="nombre" etiqueta="Nombre" valorInicial={editando.nombre} obligatorio/><Campo nombre="especie" etiqueta="Especie" valorInicial={editando.especie} obligatorio/><Campo nombre="raza" etiqueta="Raza" valorInicial={editando.raza}/><CampoSelect nombre="sexo" etiqueta="Sexo" opciones={["Macho","Hembra","No registrado"]} valorInicial={editando.sexo}/><Campo nombre="fecha_nacimiento" etiqueta="Fecha de nacimiento" tipo="date" valorInicial={editando.fecha_nacimiento}/><Campo nombre="peso_kg" etiqueta="Peso (kg)" tipo="number" valorInicial={String(editando.peso_kg||"")}/><Campo nombre="observaciones" etiqueta="Observaciones" valorInicial={editando.observaciones} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button type="button" className="secundario" onClick={async()=>{if(confirm("¿Eliminar esta mascota?")){const r=await fetch("/api/modulos?modulo=Mascotas",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id})});if(r.ok){setEditando(null);onReload();}}}}>Eliminar mascota</button><button className="primario">Guardar</button></div></form></section></div>}
     {veterinario&&<div className="velo"><section className="modal"><div className="modal-cabecera"><div><span className="etiqueta">VETERINARIO</span><h2>{veterinario.nombre}</h2></div><button className="boton-icono" onClick={()=>setVeterinario(null)}>×</button></div><form onSubmit={guardarVet}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" obligatorio/><CampoSelect nombre="tipo" etiqueta="Tipo" opciones={["Consulta","Vacuna","Examen","Tratamiento","Control"]} obligatorio/><Campo nombre="clinica" etiqueta="Clínica"/><Campo nombre="veterinario" etiqueta="Veterinario"/><Campo nombre="diagnostico" etiqueta="Diagnóstico" ancho/><Campo nombre="tratamiento" etiqueta="Tratamiento" ancho/><Campo nombre="proximo_control" etiqueta="Próxima vacuna/control" tipo="date"/><Campo nombre="archivo" etiqueta="Documento" tipo="file"/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setVeterinario(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
     {preview&&<div className="velo"><section className="modal visor-documento"><div className="modal-cabecera"><h2>{preview.titulo}</h2><button className="boton-icono" onClick={()=>setPreview(null)}>×</button></div>{preview.url?.toLowerCase().includes(".pdf")?<iframe src={preview.url} title={preview.titulo}/>:<img src={preview.url} alt={preview.titulo}/>}</section></div>}
   </>;
@@ -1961,6 +1985,7 @@ function VistaModulo({
   const [busquedaModulo, setBusquedaModulo] = useState("");
   const [categoriaModulo, setCategoriaModulo] = useState("Todas");
   const [precioEditando,setPrecioEditando]=useState<Registro|null>(null);
+  const [categoriaEditando,setCategoriaEditando]=useState("");
   const categoriasModulo = Array.from(
     new Set(registros.map((registro) => registro.estado).filter(Boolean)),
   ) as string[];
@@ -2062,6 +2087,7 @@ function VistaModulo({
               <h2>{categoria}</h2>
               <strong>{registros.filter((r) => r.estado === categoria).length}</strong>
               <small>precios registrados</small>
+              <button className="secundario" onClick={() => setCategoriaEditando(categoria)}>Editar</button>
             </article>
           ))}
         </section>
@@ -2080,7 +2106,8 @@ function VistaModulo({
           </div>)}
         </section>
       )}
-      {precioEditando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><div><span className="etiqueta">EDITAR REGISTRO</span><h2>{precioEditando.titulo}</h2></div><button className="boton-icono" onClick={()=>setPrecioEditando(null)}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const valores=Object.fromEntries(new FormData(e.currentTarget));const respuesta=await fetch("/api/precios",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:precioEditando.id,...valores})});if(respuesta.ok){setPrecioEditando(null);onReload?.();}}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" valorInicial={String(precioEditando.fecha??"").slice(0,10)} obligatorio/><Campo nombre="tienda" etiqueta="Tienda" valorInicial={precioEditando.tienda} obligatorio/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setPrecioEditando(null)}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
+      {precioEditando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><div><span className="etiqueta">EDITAR REGISTRO</span><h2>{precioEditando.titulo}</h2></div><button className="boton-icono" onClick={()=>setPrecioEditando(null)}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const valores=Object.fromEntries(new FormData(e.currentTarget));const respuesta=await fetch("/api/precios",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:precioEditando.id,...valores})});if(respuesta.ok){setPrecioEditando(null);onReload?.();}}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" valorInicial={String(precioEditando.fecha??"").slice(0,10)} obligatorio/><Campo nombre="tienda" etiqueta="Tienda" valorInicial={precioEditando.tienda} obligatorio/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setPrecioEditando(null)}>Cancelar</button><button type="button" className="secundario" onClick={async()=>{if(confirm("¿Eliminar este registro?")){const r=await fetch("/api/precios",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:precioEditando.id})});if(r.ok){setPrecioEditando(null);onReload?.();}}}}>Eliminar</button><button className="primario">Guardar</button></div></form></section></div>}
+      {categoriaEditando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar categoría</h2><button className="boton-icono" onClick={()=>setCategoriaEditando("")}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const categoria_nueva=String(new FormData(e.currentTarget).get("categoria")||"");const r=await fetch("/api/precios",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({accion:"categoria",categoria_actual:categoriaEditando,categoria_nueva})});if(r.ok){setCategoriaEditando("");onReload?.();}}}><Campo nombre="categoria" etiqueta="Categoría" valorInicial={categoriaEditando} obligatorio ancho/><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setCategoriaEditando("")}>Cancelar</button><button className="primario">Guardar</button></div></form></section></div>}
       {titulo !== "Precios" && (pestanaActiva === "Todos" || pestanaActiva === "Resumen" || pestanaActiva === "Ingresos" || pestanaActiva === "Gastos") && registrosPestana.length ? (
         <section className="tarjeta tabla">
           <div className="tabla-cabecera">
@@ -3101,13 +3128,15 @@ function ListaEditable({
 
 function Campo({
   nombre,
+  name,
   etiqueta,
   tipo = "text",
   obligatorio = false,
   ancho = false,
   valorInicial,
 }: {
-  nombre: string;
+  nombre?: string;
+  name?: string;
   etiqueta: string;
   tipo?: string;
   obligatorio?: boolean;
@@ -3120,11 +3149,11 @@ function Campo({
         {etiqueta} {obligatorio && <b className="obligatorio">*</b>}
       </span>
       <input
-        name={nombre}
+        name={nombre ?? name}
         type={tipo}
         required={obligatorio}
         step={tipo === "number" ? "0.01" : undefined}
-        defaultValue={valorInicial ?? (tipo === "date" && nombre === "fecha" ? new Date().toLocaleDateString("sv-SE") : undefined)}
+        defaultValue={valorInicial ?? (tipo === "date" && (nombre ?? name) === "fecha" ? new Date().toLocaleDateString("sv-SE") : undefined)}
         accept={tipo === "file" ? "image/*,.pdf,.doc,.docx" : undefined}
       />
     </label>

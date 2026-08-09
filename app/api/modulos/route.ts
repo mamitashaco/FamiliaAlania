@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
   let error: { message: string } | null = null;
 
   if (modulo === "Finanzas") {
+    const propioId = await integranteActual(actual.usuarioId);
     const r = await supabase.from("tb_movimientos_financieros").select("*,tb_integrantes(nombre_completo)").order("fecha", { ascending: false });
     error = r.error; registros = (r.data ?? []).map((x) => ({
       titulo: x.descripcion, detalle: `${x.tipo} · ${x.categoria ?? "Sin categoría"}`,
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
       estado: `S/ ${Number(x.monto).toFixed(2)}`,
       id: x.id, tipo: x.tipo, categoria: x.categoria, descripcion: x.descripcion,
       monto: Number(x.monto), fecha: x.fecha, observaciones: x.observaciones,
+      propio: x.integrante_id === propioId,
       usuario: (Array.isArray(x.tb_integrantes) ? x.tb_integrantes[0] : x.tb_integrantes)?.nombre_completo ?? "Usuario",
     }));
   } else if (modulo === "Seguros") {
@@ -191,6 +193,17 @@ export async function POST(request: NextRequest) {
       if(errorVet)return NextResponse.json({error:errorVet.message},{status:500});
       return NextResponse.json({guardado:true},{status:201});
     }
+    if (valor("accion") === "archivo") {
+      const archivo=form.get("archivo");
+      if (!(archivo instanceof File) || !archivo.size) return NextResponse.json({error:"Selecciona un archivo"},{status:400});
+      const ruta=await subirArchivo(archivo,actual.usuarioId);
+      const { error:errorArchivo }=await supabase.from("tb_historial_veterinario").insert({
+        mascota_id:valor("mascota_id"),fecha:new Date().toISOString().slice(0,10),tipo:"Archivo adjunto",
+        diagnostico:valor("titulo")||archivo.name,archivo_url:ruta,
+      });
+      if(errorArchivo)return NextResponse.json({error:errorArchivo.message},{status:500});
+      return NextResponse.json({guardado:true},{status:201});
+    }
     ({ error } = await supabase.from("tb_mascotas").insert({
       nombre: valor("nombre"), especie: valor("especie"), raza: valor("raza") || null,
       sexo: valor("sexo") || null, fecha_nacimiento: valor("fecha_nacimiento") || null,
@@ -278,6 +291,36 @@ export async function PATCH(request: NextRequest) {
       peso_kg:Number(cuerpo.peso_kg)||null,observaciones:cuerpo.observaciones||null,
     }).eq("id",id);
     if(error)return NextResponse.json({error:error.message},{status:500});
+  } else if (modulo === "Finanzas") {
+    const { data } = await supabase.from("tb_movimientos_financieros").select("integrante_id,fecha").eq("id", id).single();
+    const mesActual = new Date().toLocaleDateString("sv-SE").slice(0,7);
+    if (actual.rol !== "administrador" && (data?.integrante_id !== propioId || !String(data?.fecha ?? "").startsWith(mesActual)))
+      return NextResponse.json({ error: "Solo puedes editar tus registros del mes actual" }, { status: 403 });
+    const { error } = await supabase.from("tb_movimientos_financieros").update({
+      fecha: cuerpo.fecha, categoria: cuerpo.categoria || null, descripcion: cuerpo.descripcion,
+      monto: Number(cuerpo.monto), observaciones: cuerpo.observaciones || null,
+    }).eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ guardado: true });
+}
+
+export async function DELETE(request: NextRequest) {
+  const actual = sesion(request);
+  if (!actual) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const modulo = request.nextUrl.searchParams.get("modulo");
+  const { id } = await request.json();
+  const supabase = supabaseServidor();
+  if (modulo === "Finanzas") {
+    const propioId = await integranteActual(actual.usuarioId);
+    const { data } = await supabase.from("tb_movimientos_financieros").select("integrante_id,fecha").eq("id", id).single();
+    const mesActual = new Date().toLocaleDateString("sv-SE").slice(0,7);
+    if (actual.rol !== "administrador" && (data?.integrante_id !== propioId || !String(data?.fecha ?? "").startsWith(mesActual))) return NextResponse.json({ error: "Solo puedes eliminar tus registros del mes actual" }, { status: 403 });
+    const { error } = await supabase.from("tb_movimientos_financieros").delete().eq("id", id);
+    if (error) return NextResponse.json({ error:error.message }, { status:500 });
+  } else if (modulo === "Mascotas") {
+    const { error } = await supabase.from("tb_mascotas").delete().eq("id", id);
+    if (error) return NextResponse.json({ error:error.message }, { status:500 });
+  } else return NextResponse.json({ error:"Módulo inválido" }, { status:400 });
+  return NextResponse.json({ eliminado:true });
 }

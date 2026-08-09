@@ -98,12 +98,20 @@ export async function PATCH(request: NextRequest) {
   const actual = sesion(request);
   if (!actual) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const cuerpo = await request.json();
+  const supabase = supabaseServidor();
+  if (cuerpo.accion === "categoria") {
+    const anterior = String(cuerpo.categoria_actual ?? "").trim();
+    const nueva = String(cuerpo.categoria_nueva ?? "").trim();
+    if (!anterior || !nueva) return NextResponse.json({ error: "Indica la categoría" }, { status: 400 });
+    const { error } = await supabase.from("tb_productos").update({ categoria: nueva }).eq("categoria", anterior);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ guardado: true });
+  }
   const id = String(cuerpo.id ?? "");
   const tienda = String(cuerpo.tienda ?? "").trim();
   const fecha = String(cuerpo.fecha ?? "").trim();
   if (!id || !tienda || !fecha)
     return NextResponse.json({ error: "Fecha y tienda son obligatorias" }, { status: 400 });
-  const supabase = supabaseServidor();
   const { data: precio } = await supabase.from("tb_precios").select("registrado_por").eq("id", id).single();
   if (actual.rol !== "administrador" && precio?.registrado_por !== actual.usuarioId)
     return NextResponse.json({ error: "Solo puedes editar tus registros" }, { status: 403 });
@@ -119,4 +127,17 @@ export async function PATCH(request: NextRequest) {
   }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ guardado: true });
+}
+
+export async function DELETE(request: NextRequest) {
+  const actual = sesion(request);
+  if (!actual) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const { id } = await request.json();
+  const supabase = supabaseServidor();
+  const { data } = await supabase.from("tb_precios").select("registrado_por").eq("id", id).single();
+  if (actual.rol !== "administrador" && data?.registrado_por !== actual.usuarioId)
+    return NextResponse.json({ error: "Solo puedes eliminar tus registros" }, { status: 403 });
+  const { error } = await supabase.from("tb_precios").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ eliminado: true });
 }
