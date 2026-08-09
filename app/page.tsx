@@ -2403,20 +2403,6 @@ function ModalNuevoIntegrante({
   esAdministrador: boolean;
 }) {
   const [error, setError] = useState("");
-  const [adjuntos, setAdjuntos] = useState<Registro[]>([]);
-  async function cargarAdjuntos() {
-    const respuesta = await fetch(`/api/modulos?modulo=Adjuntos%20integrante&integrante_id=${integrante.id}`);
-    if (respuesta.ok) setAdjuntos((await respuesta.json()).registros ?? []);
-  }
-  useEffect(() => { cargarAdjuntos(); }, [integrante.id]);
-  async function subirAdjunto(evento: React.ChangeEvent<HTMLInputElement>) {
-    const archivo = evento.target.files?.[0];
-    if (!archivo) return;
-    const form = new FormData(); form.set("archivo", archivo); form.set("titulo", archivo.name); form.set("integrante_id", integrante.id);
-    const respuesta = await fetch("/api/modulos?modulo=Adjuntos%20integrante", { method: "POST", body: form });
-    if (!respuesta.ok) setError((await respuesta.json()).error ?? "No se pudo adjuntar el archivo");
-    else { evento.target.value = ""; await cargarAdjuntos(); }
-  }
   async function crear(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const valores = Object.fromEntries(new FormData(e.currentTarget));
@@ -2584,6 +2570,20 @@ function ModalFicha({
   soloSalud?: boolean;
 }) {
   const [error, setError] = useState("");
+  const [adjuntos, setAdjuntos] = useState<Registro[]>([]);
+  async function cargarAdjuntos() {
+    const respuesta = await fetch(`/api/modulos?modulo=Adjuntos%20integrante&integrante_id=${integrante.id}`);
+    if (respuesta.ok) setAdjuntos((await respuesta.json()).registros ?? []);
+  }
+  useEffect(() => { cargarAdjuntos(); }, [integrante.id]);
+  async function subirAdjunto(evento: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = evento.target.files?.[0];
+    if (!archivo) return;
+    const form = new FormData(); form.set("archivo", archivo); form.set("titulo", archivo.name); form.set("integrante_id", integrante.id);
+    const respuesta = await fetch("/api/modulos?modulo=Adjuntos%20integrante", { method: "POST", body: form });
+    if (!respuesta.ok) setError((await respuesta.json()).error ?? "No se pudo adjuntar el archivo");
+    else { evento.target.value = ""; await cargarAdjuntos(); }
+  }
   const [contactos, setContactos] = useState(
     integrante.contactos.length
       ? integrante.contactos
