@@ -122,6 +122,16 @@ export async function GET(request: NextRequest) {
         autor: nombres.get(x.integrante_id) ?? "Usuario", propio: x.integrante_id === propioId,
       })),
     ]);
+  } else if (modulo === "Adjuntos integrante") {
+    const integranteId = request.nextUrl.searchParams.get("integrante_id");
+    const propioId = await integranteActual(actual.usuarioId);
+    if (!integranteId || (actual.rol !== "administrador" && integranteId !== propioId))
+      return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
+    const r = await supabase.from("tb_archivos").select("*").eq("integrante_id", integranteId).eq("categoria", "Adjunto de integrante").order("creado_en", { ascending: false });
+    error = r.error; registros = await Promise.all((r.data ?? []).map(async (x) => ({
+      id: x.id, titulo: x.nombre, detalle: x.descripcion ?? "Archivo adjunto", fecha: x.creado_en,
+      url: (await supabase.storage.from(BUCKET).createSignedUrl(x.archivo_url, 3600)).data?.signedUrl,
+    })));
   } else if (modulo === "Archivos históricos") {
     const r = await supabase.from("tb_archivos").select("*").order("creado_en", { ascending: false });
     error = r.error; registros = await Promise.all((r.data ?? []).map(async (x) => ({
@@ -209,7 +219,7 @@ export async function POST(request: NextRequest) {
       sexo: valor("sexo") || null, fecha_nacimiento: valor("fecha_nacimiento") || null,
       observaciones: valor("observaciones") || null,
     }));
-  } else if (modulo === "Educación" || modulo === "Archivos históricos") {
+  } else if (modulo === "Educación" || modulo === "Archivos históricos" || modulo === "Adjuntos integrante") {
     const archivo = form.get("archivo");
     if (!(archivo instanceof File) || !archivo.size)
       return NextResponse.json({ error: "Selecciona un archivo" }, { status: 400 });
@@ -230,9 +240,12 @@ export async function POST(request: NextRequest) {
         }));
       }
     } else {
+      const destinoId = modulo === "Adjuntos integrante" ? valor("integrante_id") : integranteId;
+      if (!destinoId || (modulo === "Adjuntos integrante" && actual.rol !== "administrador" && destinoId !== integranteId))
+        return NextResponse.json({ error: "No tienes permiso para adjuntar a esta ficha" }, { status: 403 });
       ({ error } = await supabase.from("tb_archivos").insert({
-        nombre: valor("titulo"), categoria: "Fotografía", descripcion: valor("descripcion") || null,
-        archivo_url: ruta, tipo_mime: archivo.type, integrante_id: integranteId,
+        nombre: valor("titulo") || archivo.name, categoria: modulo === "Adjuntos integrante" ? "Adjunto de integrante" : "Fotografía", descripcion: valor("descripcion") || null,
+        archivo_url: ruta, tipo_mime: archivo.type, integrante_id: destinoId,
         subido_por: actual.usuarioId,
       }));
     }

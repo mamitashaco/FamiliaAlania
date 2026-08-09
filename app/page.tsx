@@ -209,6 +209,7 @@ export default function Home() {
   const [fichaDesdeSalud, setFichaDesdeSalud] = useState(false);
   const [versionSalud, setVersionSalud] = useState(0);
   const [menuCuenta, setMenuCuenta] = useState(false);
+  const [accionRapida, setAccionRapida] = useState<"ingreso" | "egreso" | "precio" | "historial" | null>(null);
   const cargasModulo = useRef<Record<string, number>>({});
 
   function abrirSeccion(nombre: string) {
@@ -573,6 +574,7 @@ export default function Home() {
               personas={integrantesVisibles}
               proyectos={registrosModulo["Proyectos y eventos"] ?? []}
               onNavigate={abrirSeccion}
+              onQuick={(accion) => { setAccionRapida(accion); if (accion === "precio") { abrirSeccion("Precios"); setModal("Nuevo registro · Precios"); } else abrirSeccion(accion === "historial" ? "Salud" : "Finanzas"); }}
               onAdd={() => setModal("Agregar registro")}
               nombre={
                 integrantesVisibles
@@ -592,7 +594,7 @@ export default function Home() {
               onOpen={setFicha}
             />
           ) : seccion === "Salud" ? (
-            <VistaSalud key={versionSalud} onChanged={() => cargarDatos(true)} onEditProfile={(id) => {
+            <VistaSalud key={versionSalud} accionRapida={accionRapida} onAccionUsada={() => setAccionRapida(null)} onChanged={() => cargarDatos(true)} onEditProfile={(id) => {
               const persona = integrantesVisibles.find((p) => p.id === id);
               if (persona) { setFichaDesdeSalud(true); setFicha(persona); }
             }} />
@@ -608,6 +610,8 @@ export default function Home() {
           ) : seccion === "Finanzas" ? (
             <VistaFinanzas
               registros={registrosModulo.Finanzas ?? []}
+              accionRapida={accionRapida}
+              onAccionUsada={() => setAccionRapida(null)}
               onAdd={() => setModal("Nuevo registro · Finanzas")}
               onReload={() => cargarModulo("Finanzas", true)}
             />
@@ -709,6 +713,7 @@ function Inicio({
   personas,
   proyectos,
   onNavigate,
+  onQuick,
   onAdd,
   nombre,
   proyectosAbiertos,
@@ -716,6 +721,7 @@ function Inicio({
   personas: typeof integrantes;
   proyectos: Registro[];
   onNavigate: (s: string) => void;
+  onQuick: (accion: "ingreso" | "egreso" | "precio" | "historial") => void;
   onAdd: () => void;
   nombre: string;
   proyectosAbiertos: number;
@@ -758,7 +764,7 @@ function Inicio({
       <div className="grilla-inicio una-columna">
         <section className="tarjeta accesos-rapidos">
           <span className="etiqueta">ACCESO RÁPIDO</span>
-          <div className="ficha-acciones"><button className="secundario" onClick={() => onNavigate("Finanzas")}>＋ Ingreso</button><button className="secundario" onClick={() => onNavigate("Finanzas")}>＋ Egreso</button><button className="secundario" onClick={() => onNavigate("Precios")}>＋ Precio</button><button className="secundario" onClick={() => onNavigate("Salud")}>＋ Historial médico</button></div>
+          <div className="ficha-acciones"><button className="secundario" onClick={() => onQuick("ingreso")}>＋ Ingreso</button><button className="secundario" onClick={() => onQuick("egreso")}>＋ Egreso</button><button className="secundario" onClick={() => onQuick("precio")}>＋ Precio</button><button className="secundario" onClick={() => onQuick("historial")}>＋ Historial médico</button></div>
         </section>
         {proximas.length > 0 && (
           <section>
@@ -997,7 +1003,7 @@ const TABLAS_SALUD: Record<string, string> = {
   signos: "tb_signos_vitales",
 };
 
-function VistaSalud({ onChanged, onEditProfile }: { onChanged: () => void; onEditProfile: (id: string) => void }) {
+function VistaSalud({ onChanged, onEditProfile, accionRapida, onAccionUsada }: { onChanged: () => void; onEditProfile: (id: string) => void; accionRapida: string | null; onAccionUsada: () => void }) {
   const [datosSalud, setDatosSalud] = useState<Record<string, any>[]>([]);
   const [usuarioActual, setUsuarioActual] = useState("");
   const [rolActual, setRolActual] = useState("");
@@ -1032,6 +1038,7 @@ function VistaSalud({ onChanged, onEditProfile }: { onChanged: () => void; onEdi
   useEffect(() => {
     cargarSalud();
   }, []);
+  useEffect(() => { if (accionRapida === "historial") { setPestana("historial"); setFormularioAbierto(true); onAccionUsada(); } }, [accionRapida, onAccionUsada]);
   const persona = datosSalud.find((x) => x.id === integranteId);
   const puedeEditar =
     rolActual === "administrador" ||
@@ -1840,7 +1847,7 @@ function GraficoResumenFinanzas({ registros, tipo }: { registros: Registro[]; ti
   />{tooltip&&<span className="tooltip-grafico" style={{left:tooltip.x}}>{tooltip.texto}</span>}</div>;
 }
 
-function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; onAdd: () => void; onReload: () => void }) {
+function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada }: { registros: Registro[]; onAdd: () => void; onReload: () => void; accionRapida: string | null; onAccionUsada: () => void }) {
   const [pestana, setPestana] = useState("Resumen");
   const anios = Array.from(new Set(registros.map((x) => String(x.fecha ?? "").slice(0, 4)).filter(Boolean)));
   const [anio, setAnio] = useState(String(new Date().getFullYear()));
@@ -1849,6 +1856,7 @@ function VistaFinanzas({ registros, onAdd, onReload }: { registros: Registro[]; 
   const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
   const [tooltipPastel,setTooltipPastel]=useState("");
   const [editando,setEditando]=useState<Registro|null>(null);
+  useEffect(() => { if (accionRapida === "ingreso" || accionRapida === "egreso") { setPestana(accionRapida === "ingreso" ? "Ingresos" : "Egresos"); onAccionUsada(); } }, [accionRapida, onAccionUsada]);
   const filtrados = registros.filter((x) => String(x.fecha).startsWith(anio));
   const gastosCategoria = Array.from(
     filtrados
@@ -2399,6 +2407,20 @@ function ModalNuevoIntegrante({
   esAdministrador: boolean;
 }) {
   const [error, setError] = useState("");
+  const [adjuntos, setAdjuntos] = useState<Registro[]>([]);
+  async function cargarAdjuntos() {
+    const respuesta = await fetch(`/api/modulos?modulo=Adjuntos%20integrante&integrante_id=${integrante.id}`);
+    if (respuesta.ok) setAdjuntos((await respuesta.json()).registros ?? []);
+  }
+  useEffect(() => { cargarAdjuntos(); }, [integrante.id]);
+  async function subirAdjunto(evento: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = evento.target.files?.[0];
+    if (!archivo) return;
+    const form = new FormData(); form.set("archivo", archivo); form.set("titulo", archivo.name); form.set("integrante_id", integrante.id);
+    const respuesta = await fetch("/api/modulos?modulo=Adjuntos%20integrante", { method: "POST", body: form });
+    if (!respuesta.ok) setError((await respuesta.json()).error ?? "No se pudo adjuntar el archivo");
+    else { evento.target.value = ""; await cargarAdjuntos(); }
+  }
   async function crear(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const valores = Object.fromEntries(new FormData(e.currentTarget));
@@ -3084,6 +3106,11 @@ function ModalFicha({
               ))}
             </div>
           </ListaEditable>
+          {!soloSalud && <fieldset>
+            <legend>Archivos adjuntos</legend>
+            {puedeEditar && <label className="secundario" style={{ display: "inline-block", cursor: "pointer" }}>＋ Adjuntar archivo<input type="file" accept="image/*,.pdf,.doc,.docx" hidden onChange={subirAdjunto} /></label>}
+            <div className="lista-adjuntos">{adjuntos.map((archivo) => <a key={archivo.id} href={archivo.url} target="_blank" rel="noreferrer">{archivo.titulo} ↗</a>)}{!adjuntos.length && <small>Sin archivos adjuntos.</small>}</div>
+          </fieldset>}
           {error && <p className="error">{error}</p>}
           <div className="modal-acciones">
             {!soloSalud && <button type="button" className="secundario" onClick={onClose}>{puedeEditar ? "Cancelar" : "Cerrar"}</button>}
