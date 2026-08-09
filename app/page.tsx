@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, CalendarDays, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards, Plus, Stethoscope } from "lucide-react";
+import { Archive, CalendarDays, GraduationCap, HeartPulse, Home as HomeIcon, PawPrint, Plane, ShieldCheck, ShoppingBasket, Users, WalletCards, Stethoscope } from "lucide-react";
 
 type Registro = {
   titulo: string;
@@ -753,12 +753,13 @@ function Inicio({
           <p>Información familiar centralizada y protegida.</p>
         </div>
       </section>
+      <section className="metricas mosaico-inicio">
+        <article className="tarjeta-metrica"><WalletCards size={21}/><span>Finanzas</span><strong>Registrar movimiento</strong><div><button className="boton-icono" onClick={() => onQuick("ingreso")} aria-label="Agregar ingreso">↗</button><button className="boton-icono" onClick={() => onQuick("egreso")} aria-label="Agregar egreso">↙</button></div></article>
+        <article className="tarjeta-metrica"><ShoppingBasket size={21}/><span>Precio</span><strong>Nuevo precio</strong><div><button className="boton-icono" onClick={() => onQuick("precio")} aria-label="Agregar precio">⌕</button></div></article>
+        <article className="tarjeta-metrica"><Stethoscope size={21}/><span>Historial médico</span><strong>Nuevo registro</strong><div><button className="boton-icono" onClick={() => onQuick("historial")} aria-label="Agregar historial médico">♡</button></div></article>
+        <button className="metrica-proyectos" onClick={() => onNavigate("Proyectos y eventos")}><span>Proyectos y eventos abiertos</span><strong>{proyectosAbiertos}</strong><small>Ver planificación familiar →</small></button>
+      </section>
       <div className="grilla-inicio una-columna">
-        <section className="tarjeta accesos-rapidos">
-          <span className="etiqueta">ACCESO RÁPIDO</span>
-          <div className="ficha-acciones"><article><WalletCards size={20}/><strong>Finanzas</strong><span><button onClick={() => onQuick("ingreso")} aria-label="Agregar ingreso"><Plus size={16}/> Ingreso</button><button onClick={() => onQuick("egreso")} aria-label="Agregar egreso"><Plus size={16}/> Egreso</button></span></article><article><ShoppingBasket size={20}/><strong>Precio</strong><button onClick={() => onQuick("precio")} aria-label="Agregar precio"><Plus size={16}/> Agregar</button></article><article><Stethoscope size={20}/><strong>Historial médico</strong><button onClick={() => onQuick("historial")} aria-label="Agregar historial médico"><Plus size={16}/> Agregar</button></article></div>
-        </section>
-        <section className="metricas"><button className="metrica-proyectos" onClick={() => onNavigate("Proyectos y eventos")}><span>Proyectos y eventos abiertos</span><strong>{proyectosAbiertos}</strong><small>Ver planificación familiar →</small></button></section>
         {proximas.length > 0 && (
           <section>
             <div className="cabecera-seccion">
