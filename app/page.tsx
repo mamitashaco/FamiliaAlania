@@ -1815,15 +1815,14 @@ type FilaFinanza = { fecha: string; categoria: string; descripcion: string; mont
 const categoriasIngresoIniciales = ["Sueldo", "Venta", "Bonificación", "Otros ingresos"];
 const categoriasEgresoIniciales = ["Alimentación", "Salud", "Educación", "Servicios", "Transporte", "Otros egresos"];
 
-function GraficoResumenFinanzas({ registros, tipo, meses }: { registros: Registro[]; tipo: "barras" | "ahorro"; meses: number }) {
+function GraficoResumenFinanzas({ registros }: { registros: Registro[] }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [tooltip,setTooltip]=useState<{x:number;texto:string}|null>(null);
   const ingresos = Array(12).fill(0), egresos = Array(12).fill(0);
   registros.forEach((r) => { const m = new Date(`${r.fecha}T00:00:00`).getMonth(); (r.tipo === "ingreso" ? ingresos : egresos)[m] += Number(r.monto); });
   const ahorro = ingresos.map((x, i) => x - egresos[i]);
   const max = Math.max(1, ...ingresos, ...egresos, ...ahorro.map(Math.abs));
-  const ahora = new Date().getMonth();
-  const indices = Array.from({ length: meses }, (_, i) => (ahora - meses + 1 + i + 12) % 12);
+  const indices = Array.from({ length: 12 }, (_, i) => i);
   const nombresMes = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
   useEffect(() => {
     const c = canvas.current; if (!c) return;
@@ -1832,21 +1831,19 @@ function GraficoResumenFinanzas({ registros, tipo, meses }: { registros: Registr
     ctx.strokeStyle = "#94a3b8"; ctx.beginPath(); ctx.moveTo(38, 12); ctx.lineTo(38, 180); ctx.lineTo(w - 8, 180); ctx.stroke();
     ctx.fillStyle="#64748b";ctx.font="9px Roboto";
     [0,.25,.5,.75,1].forEach((p)=>{const y=180-p*150;ctx.fillText(`S/${Math.round(max*p)}`,2,y+3);});
-    if (tipo === "barras") {
+    {
       const categorias = Array.from(new Set(registros.map((r) => `${r.tipo}:${r.categoria || "Sin categoría"}`)));
       const colores = ["#16a34a","#22c55e","#86efac","#dc2626","#f87171","#fca5a5","#f59e0b"];
-      const anchoGrupo = Math.max(18, (w - 65) / meses * .6);
-      indices.forEach((mes, i) => { const x = 48 + i * (w - 65) / Math.max(meses - 1, 1) - anchoGrupo / 2; ["ingreso","gasto"].forEach((tipoMovimiento, lado) => { let base=0; categorias.filter((c)=>c.startsWith(`${tipoMovimiento}:`)).forEach((categoria, n) => { const monto=registros.filter((r)=>r.tipo===tipoMovimiento&&new Date(`${r.fecha}T00:00:00`).getMonth()===mes&&`${r.tipo}:${r.categoria || "Sin categoría"}`===categoria).reduce((s,r)=>s+Number(r.monto),0); const alto=monto/max*150; ctx.fillStyle=colores[(n+(lado?3:0))%colores.length]; ctx.fillRect(x+lado*(anchoGrupo/2+3),180-base-alto,anchoGrupo/2,alto); base+=alto; }); }); });
-    } else {
-      indices.forEach((mes,i)=>{const valor=ahorro[mes];if(valor<=0)return;const x=48+i*(w-65)/Math.max(meses-1,1)-8,alto=valor/max*150;ctx.fillStyle="#2563eb";ctx.fillRect(x,180-alto,16,alto);ctx.fillStyle="#1e3a8a";ctx.fillText(`S/${Math.round(valor)}`,x-7,174-alto);});
+      const anchoGrupo = Math.max(18, (w - 65) / 12 * .6);
+      indices.forEach((mes, i) => { const x = 48 + i * (w - 65) / 11 - anchoGrupo / 2; ["ingreso","gasto"].forEach((tipoMovimiento, lado) => { let base=0; categorias.filter((c)=>c.startsWith(`${tipoMovimiento}:`)).forEach((categoria, n) => { const monto=registros.filter((r)=>r.tipo===tipoMovimiento&&new Date(`${r.fecha}T00:00:00`).getMonth()===mes&&`${r.tipo}:${r.categoria || "Sin categoría"}`===categoria).reduce((s,r)=>s+Number(r.monto),0); const alto=monto/max*150; ctx.fillStyle=colores[(n+(lado?3:0))%colores.length]; ctx.fillRect(x+lado*(anchoGrupo/2+3),180-base-alto,anchoGrupo/2,alto); base+=alto; }); }); });
     }
-    ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; indices.forEach((mes, i) => ctx.fillText(nombresMes[mes], 42 + i * (w - 65) / Math.max(meses - 1, 1), 202));
-  }, [registros, tipo, meses]);
+    ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; indices.forEach((mes, i) => ctx.fillText(nombresMes[mes], 42 + i * (w - 65) / 11, 202));
+  }, [registros]);
   return <div className="envoltura-grafico"><canvas
     ref={canvas}
     className="canvas-finanzas"
-    aria-label={tipo === "barras" ? "Ingresos versus egresos por mes" : "Ahorro por mes"}
-    onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect();const posicion=Math.max(0,Math.min(meses-1,Math.round(((e.clientX-rect.left-48)/Math.max(rect.width-65,1))*Math.max(meses-1,1))));const i=indices[posicion];setTooltip({x:e.clientX-rect.left,texto:tipo==="barras"?`${nombresMes[i]} · Ingresos S/${ingresos[i].toFixed(2)} · Egresos S/${egresos[i].toFixed(2)}`:`${nombresMes[i]} · Ahorro S/${ahorro[i].toFixed(2)}`});}}
+    aria-label="Ingresos versus egresos por mes"
+    onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect();const posicion=Math.max(0,Math.min(11,Math.round(((e.clientX-rect.left-48)/Math.max(rect.width-65,1))*11)));const i=indices[posicion];setTooltip({x:e.clientX-rect.left,texto:`${nombresMes[i]} · Ingresos S/${ingresos[i].toFixed(2)} · Egresos S/${egresos[i].toFixed(2)}`});}}
     onPointerLeave={()=>setTooltip(null)}
   />{tooltip&&<span className="tooltip-grafico" style={{left:tooltip.x}}>{tooltip.texto}</span>}</div>;
 }
@@ -1858,7 +1855,6 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
   const [categoriasIngreso, setCategoriasIngreso] = useState(categoriasIngresoIniciales);
   const [categoriasEgreso, setCategoriasEgreso] = useState(categoriasEgresoIniciales);
   const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
-  const [rangoMeses,setRangoMeses]=useState<6|12>(6);
   const [tooltipPastel,setTooltipPastel]=useState("");
   const [editando,setEditando]=useState<Registro|null>(null);
   useEffect(() => { if (accionRapida === "ingreso" || accionRapida === "egreso") { setPestana(accionRapida === "ingreso" ? "Ingresos" : "Egresos"); onAccionUsada(); } }, [accionRapida, onAccionUsada]);
@@ -1895,9 +1891,9 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
     <TituloPagina etiqueta="GESTIÓN FAMILIAR" titulo="Finanzas" descripcion="Ingresos, egresos, ahorro y categorías familiares." onAdd={onAdd} textoBoton="Nuevo registro" />
     <section className="pestanas">{["Resumen","Ingresos","Egresos","Categorías"].map((x) => <button key={x} className={pestana === x ? "seleccionada" : ""} onClick={() => setPestana(x)}>{x}</button>)}</section>
     {pestana === "Resumen" && <>
-      <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label><div className="selector-rango"><button className={rangoMeses===6?"seleccionada":""} onClick={()=>setRangoMeses(6)}>6 últimos meses</button><button className={rangoMeses===12?"seleccionada":""} onClick={()=>setRangoMeses(12)}>12 meses</button></div></div>
-      <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><p>Barras apiladas por categoría.</p><GraficoResumenFinanzas registros={filtrados} tipo="barras" meses={rangoMeses} /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><p>Solo se muestran los meses con ahorro.</p><GraficoResumenFinanzas registros={filtrados} tipo="ahorro" meses={rangoMeses} /></section></div>
-      <section className="tarjeta grafico-finanza"><h2>Distribución por categoría</h2><div className="tabla-apoyo tabla-distribucion"><div><b>Categorías</b><b>Monto</b><b>%</b></div>{gastosCategoria.map(([categoria,monto])=><div key={categoria}><span>{categoria}</span><span>S/{monto.toFixed(2)}</span><span>{(monto/Math.max(totalGastos,1)*100).toFixed(1)}%</span></div>)}</div></section>
+      <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label></div>
+      <section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><p>Barras apiladas por categoría · 12 meses</p><GraficoResumenFinanzas registros={filtrados} /><div className="tabla-apoyo resumen-mensual"><div><b>Mes</b>{["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].map(m=><b key={m}>{m}</b>)}</div><div><b>Ingresos</b>{Array.from({length:12},(_,i)=><span key={i}>S/{filtrados.filter(r=>r.tipo==="ingreso"&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0).toFixed(0)}</span>)}</div><div><b>Egresos</b>{Array.from({length:12},(_,i)=><span key={i}>S/{filtrados.filter(r=>r.tipo==="gasto"&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0).toFixed(0)}</span>)}</div><div><b>Total</b>{Array.from({length:12},(_,i)=>{const ingreso=filtrados.filter(r=>r.tipo==="ingreso"&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0),egreso=filtrados.filter(r=>r.tipo==="gasto"&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0);return <span key={i}>S/{(ingreso-egreso).toFixed(0)}</span>})}</div></div><div className="leyenda-categorias"><strong>5 principales</strong>{["ingreso","gasto"].map(tipoLeyenda=><div key={tipoLeyenda}><small>{tipoLeyenda==="ingreso"?"Ingresos":"Egresos"}</small>{Array.from(filtrados.filter(r=>r.tipo===tipoLeyenda).reduce((m,r)=>m.set(r.categoria||"Sin categoría",(m.get(r.categoria||"Sin categoría")??0)+Number(r.monto)),new Map<string,number>())).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([categoria,monto])=><span key={categoria}>{categoria} · S/{monto.toFixed(0)}</span>)}</div>)}</div></section>
+      <section className="tarjeta grafico-finanza"><h2>Distribución por categoría por mes</h2><div className="tabla-apoyo resumen-mensual"><div><b>Categorías</b>{["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].map(m=><b key={m}>{m}</b>)}</div>{gastosCategoria.map(([categoria])=><div key={categoria}><b>{categoria}</b>{Array.from({length:12},(_,i)=>{const monto=filtrados.filter(r=>r.tipo==="gasto"&&r.categoria===categoria&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0);const totalMes=filtrados.filter(r=>r.tipo==="gasto"&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0);return <span key={i}>S/{monto.toFixed(0)}<small>{totalMes?(monto/totalMes*100).toFixed(0):0}%</small></span>})}</div>)}</div></section>
     </>}
     {(pestana === "Ingresos" || pestana === "Egresos") && <>
       <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
