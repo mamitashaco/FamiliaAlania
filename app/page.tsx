@@ -1815,13 +1815,16 @@ type FilaFinanza = { fecha: string; categoria: string; descripcion: string; mont
 const categoriasIngresoIniciales = ["Sueldo", "Venta", "Bonificación", "Otros ingresos"];
 const categoriasEgresoIniciales = ["Alimentación", "Salud", "Educación", "Servicios", "Transporte", "Otros egresos"];
 
-function GraficoResumenFinanzas({ registros, tipo }: { registros: Registro[]; tipo: "barras" | "linea" }) {
+function GraficoResumenFinanzas({ registros, tipo, meses }: { registros: Registro[]; tipo: "barras" | "ahorro"; meses: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [tooltip,setTooltip]=useState<{x:number;texto:string}|null>(null);
   const ingresos = Array(12).fill(0), egresos = Array(12).fill(0);
   registros.forEach((r) => { const m = new Date(`${r.fecha}T00:00:00`).getMonth(); (r.tipo === "ingreso" ? ingresos : egresos)[m] += Number(r.monto); });
   const ahorro = ingresos.map((x, i) => x - egresos[i]);
   const max = Math.max(1, ...ingresos, ...egresos, ...ahorro.map(Math.abs));
+  const ahora = new Date().getMonth();
+  const indices = Array.from({ length: meses }, (_, i) => (ahora - meses + 1 + i + 12) % 12);
+  const nombresMes = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
   useEffect(() => {
     const c = canvas.current; if (!c) return;
     const ctx = c.getContext("2d"); if (!ctx) return;
@@ -1830,21 +1833,20 @@ function GraficoResumenFinanzas({ registros, tipo }: { registros: Registro[]; ti
     ctx.fillStyle="#64748b";ctx.font="9px Roboto";
     [0,.25,.5,.75,1].forEach((p)=>{const y=180-p*150;ctx.fillText(`S/${Math.round(max*p)}`,2,y+3);});
     if (tipo === "barras") {
-      const bw = Math.max(3, (w - 60) / 30);
-      ingresos.forEach((v, i) => { const x = 48 + i * (w - 65) / 12; ctx.fillStyle = "#16a34a"; ctx.fillRect(x, 180 - v / max * 150, bw, v / max * 150); ctx.fillStyle = "#dc2626"; ctx.fillRect(x + bw + 2, 180 - egresos[i] / max * 150, bw, egresos[i] / max * 150); });
+      const categorias = Array.from(new Set(registros.map((r) => `${r.tipo}:${r.categoria || "Sin categoría"}`)));
+      const colores = ["#16a34a","#22c55e","#86efac","#dc2626","#f87171","#fca5a5","#f59e0b"];
+      const anchoGrupo = Math.max(18, (w - 65) / meses * .6);
+      indices.forEach((mes, i) => { const x = 48 + i * (w - 65) / Math.max(meses - 1, 1) - anchoGrupo / 2; ["ingreso","gasto"].forEach((tipoMovimiento, lado) => { let base=0; categorias.filter((c)=>c.startsWith(`${tipoMovimiento}:`)).forEach((categoria, n) => { const monto=registros.filter((r)=>r.tipo===tipoMovimiento&&new Date(`${r.fecha}T00:00:00`).getMonth()===mes&&`${r.tipo}:${r.categoria || "Sin categoría"}`===categoria).reduce((s,r)=>s+Number(r.monto),0); const alto=monto/max*150; ctx.fillStyle=colores[(n+(lado?3:0))%colores.length]; ctx.fillRect(x+lado*(anchoGrupo/2+3),180-base-alto,anchoGrupo/2,alto); base+=alto; }); }); });
     } else {
-      const minAhorro=Math.min(0,...ahorro), maxAhorro=Math.max(0,...ahorro), rango=Math.max(1,maxAhorro-minAhorro);
-      const puntos=ahorro.map((v,i)=>({x:48+i*(w-65)/11,y:180-(v-minAhorro)/rango*150}));
-      ctx.beginPath(); puntos.forEach((p,i)=>{if(!i)ctx.moveTo(p.x,p.y);else{const a=puntos[i-1],m=(a.x+p.x)/2;ctx.bezierCurveTo(m,a.y,m,p.y,p.x,p.y);}}); ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 3; ctx.stroke();
-      puntos.forEach((p)=>{ctx.beginPath();ctx.fillStyle="#fff";ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#2563eb";ctx.stroke();});
+      indices.forEach((mes,i)=>{const valor=ahorro[mes];if(valor<=0)return;const x=48+i*(w-65)/Math.max(meses-1,1)-8,alto=valor/max*150;ctx.fillStyle="#2563eb";ctx.fillRect(x,180-alto,16,alto);ctx.fillStyle="#1e3a8a";ctx.fillText(`S/${Math.round(valor)}`,x-7,174-alto);});
     }
-    ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].forEach((m, i) => ctx.fillText(m, 42 + i * (w - 65) / 12, 202));
-  }, [registros, tipo]);
+    ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; indices.forEach((mes, i) => ctx.fillText(nombresMes[mes], 42 + i * (w - 65) / Math.max(meses - 1, 1), 202));
+  }, [registros, tipo, meses]);
   return <div className="envoltura-grafico"><canvas
     ref={canvas}
     className="canvas-finanzas"
     aria-label={tipo === "barras" ? "Ingresos versus egresos por mes" : "Ahorro por mes"}
-    onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect();const i=Math.max(0,Math.min(11,Math.round(((e.clientX-rect.left-48)/Math.max(rect.width-65,1))*11)));setTooltip({x:e.clientX-rect.left,texto:tipo==="barras"?`${["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]} · Ingresos S/${ingresos[i].toFixed(2)} · Egresos S/${egresos[i].toFixed(2)}`:`${["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]} · Ahorro S/${ahorro[i].toFixed(2)}`});}}
+    onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect();const posicion=Math.max(0,Math.min(meses-1,Math.round(((e.clientX-rect.left-48)/Math.max(rect.width-65,1))*Math.max(meses-1,1))));const i=indices[posicion];setTooltip({x:e.clientX-rect.left,texto:tipo==="barras"?`${nombresMes[i]} · Ingresos S/${ingresos[i].toFixed(2)} · Egresos S/${egresos[i].toFixed(2)}`:`${nombresMes[i]} · Ahorro S/${ahorro[i].toFixed(2)}`});}}
     onPointerLeave={()=>setTooltip(null)}
   />{tooltip&&<span className="tooltip-grafico" style={{left:tooltip.x}}>{tooltip.texto}</span>}</div>;
 }
@@ -1856,6 +1858,7 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
   const [categoriasIngreso, setCategoriasIngreso] = useState(categoriasIngresoIniciales);
   const [categoriasEgreso, setCategoriasEgreso] = useState(categoriasEgresoIniciales);
   const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
+  const [rangoMeses,setRangoMeses]=useState<6|12>(6);
   const [tooltipPastel,setTooltipPastel]=useState("");
   const [editando,setEditando]=useState<Registro|null>(null);
   useEffect(() => { if (accionRapida === "ingreso" || accionRapida === "egreso") { setPestana(accionRapida === "ingreso" ? "Ingresos" : "Egresos"); onAccionUsada(); } }, [accionRapida, onAccionUsada]);
@@ -1892,23 +1895,9 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
     <TituloPagina etiqueta="GESTIÓN FAMILIAR" titulo="Finanzas" descripcion="Ingresos, egresos, ahorro y categorías familiares." onAdd={onAdd} textoBoton="Nuevo registro" />
     <section className="pestanas">{["Resumen","Ingresos","Egresos","Categorías"].map((x) => <button key={x} className={pestana === x ? "seleccionada" : ""} onClick={() => setPestana(x)}>{x}</button>)}</section>
     {pestana === "Resumen" && <>
-      <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label></div>
-      <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><GraficoResumenFinanzas registros={filtrados} tipo="barras" /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><GraficoResumenFinanzas registros={filtrados} tipo="linea" /></section></div>
-      <section className="tarjeta grafico-finanza pastel-finanzas">
-        <h2>Distribución por categoría</h2>
-        <div className="pastel-interactivo">
-          <div className="pastel" style={{ background: fondoPastel }} onPointerMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const angulo = (Math.atan2(e.clientY - (rect.top + rect.height / 2), e.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI + 450) % 360;
-            let acumulado = 0;
-            const elegido = gastosCategoria.find(([, monto]) => { acumulado += monto / Math.max(totalGastos, 1) * 360; return angulo <= acumulado; });
-            setTooltipPastel(elegido ? `${elegido[0]} · S/${elegido[1].toFixed(2)} · ${(elegido[1] / Math.max(totalGastos, 1) * 100).toFixed(1)}%` : "");
-          }} onPointerLeave={() => setTooltipPastel("")} />
-          {tooltipPastel && <span className="tooltip-pastel">{tooltipPastel}</span>}
-          <div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: {(monto / Math.max(totalGastos, 1) * 100).toFixed(1)}%</span>)}</div>
-        </div>
-        <div className="tabla-apoyo"><div><b>Categoría</b><b>Monto</b><b>%</b></div>{gastosCategoria.map(([categoria, monto]) => <div key={categoria}><span>{categoria}</span><span>S/{monto.toFixed(2)}</span><span>{(monto / Math.max(totalGastos, 1) * 100).toFixed(1)}%</span></div>)}</div>
-      </section>
+      <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label><div className="selector-rango"><button className={rangoMeses===6?"seleccionada":""} onClick={()=>setRangoMeses(6)}>6 últimos meses</button><button className={rangoMeses===12?"seleccionada":""} onClick={()=>setRangoMeses(12)}>12 meses</button></div></div>
+      <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><p>Barras apiladas por categoría.</p><GraficoResumenFinanzas registros={filtrados} tipo="barras" meses={rangoMeses} /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><p>Solo se muestran los meses con ahorro.</p><GraficoResumenFinanzas registros={filtrados} tipo="ahorro" meses={rangoMeses} /></section></div>
+      <section className="tarjeta grafico-finanza"><h2>Distribución por categoría</h2><div className="tabla-apoyo tabla-distribucion"><div><b>Categorías</b><b>Monto</b><b>%</b></div>{gastosCategoria.map(([categoria,monto])=><div key={categoria}><span>{categoria}</span><span>S/{monto.toFixed(2)}</span><span>{(monto/Math.max(totalGastos,1)*100).toFixed(1)}%</span></div>)}</div></section>
     </>}
     {(pestana === "Ingresos" || pestana === "Egresos") && <>
       <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
