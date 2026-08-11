@@ -1894,7 +1894,21 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
     {pestana === "Resumen" && <>
       <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label></div>
       <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><GraficoResumenFinanzas registros={filtrados} tipo="barras" /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><GraficoResumenFinanzas registros={filtrados} tipo="linea" /></section></div>
-      <section className="tarjeta grafico-finanza pastel-finanzas"><h2>Distribución por categoría</h2><div className="pastel-interactivo"><div className="pastel" style={{ background: fondoPastel }} onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;let ang=(Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+450)%360;let suma=0;const elegido=gastosCategoria.find(([,m])=>{suma+=m/Math.max(totalGastos,1)*360;return ang<=suma;});setTooltipPastel(elegido?`${elegido[0]} · S/${elegido[1].toFixed(2)} · ${(elegido[1]/Math.max(totalGastos,1)*100).toFixed(1)}%`:"");}} onPointerLeave={()=>setTooltipPastel("")}/>{tooltipPastel&&<span className="tooltip-pastel">{tooltipPastel}</span>}</div><div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: {(monto/Math.max(totalGastos,1)*100).toFixed(1)}%</span>)}</div></div><div className="tabla-apoyo"><div><b>Categoría</b><b>Monto</b><b>%</b></div>{gastosCategoria.map(([categoria,monto])=><div key={categoria}><span>{categoria}</span><span>S/{monto.toFixed(2)}</span><span>{(monto/Math.max(totalGastos,1)*100).toFixed(1)}%</span></div>)}</div></section>
+      <section className="tarjeta grafico-finanza pastel-finanzas">
+        <h2>Distribución por categoría</h2>
+        <div className="pastel-interactivo">
+          <div className="pastel" style={{ background: fondoPastel }} onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const angulo = (Math.atan2(e.clientY - (rect.top + rect.height / 2), e.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI + 450) % 360;
+            let acumulado = 0;
+            const elegido = gastosCategoria.find(([, monto]) => { acumulado += monto / Math.max(totalGastos, 1) * 360; return angulo <= acumulado; });
+            setTooltipPastel(elegido ? `${elegido[0]} · S/${elegido[1].toFixed(2)} · ${(elegido[1] / Math.max(totalGastos, 1) * 100).toFixed(1)}%` : "");
+          }} onPointerLeave={() => setTooltipPastel("")} />
+          {tooltipPastel && <span className="tooltip-pastel">{tooltipPastel}</span>}
+          <div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: {(monto / Math.max(totalGastos, 1) * 100).toFixed(1)}%</span>)}</div>
+        </div>
+        <div className="tabla-apoyo"><div><b>Categoría</b><b>Monto</b><b>%</b></div>{gastosCategoria.map(([categoria, monto]) => <div key={categoria}><span>{categoria}</span><span>S/{monto.toFixed(2)}</span><span>{(monto / Math.max(totalGastos, 1) * 100).toFixed(1)}%</span></div>)}</div>
+      </section>
     </>}
     {(pestana === "Ingresos" || pestana === "Egresos") && <>
       <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
