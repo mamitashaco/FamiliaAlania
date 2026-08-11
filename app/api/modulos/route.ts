@@ -261,6 +261,16 @@ export async function PATCH(request: NextRequest) {
   const cuerpo = await request.json();
   const supabase = supabaseServidor();
   const propioId = await integranteActual(actual.usuarioId);
+  if (modulo === "Finanzas" && cuerpo.accion === "renombrar_categoria") {
+    const anterior = String(cuerpo.anterior ?? "").trim();
+    const nueva = String(cuerpo.nueva ?? "").trim();
+    const tipo = String(cuerpo.tipo ?? "").trim();
+    if (!anterior || !nueva || !tipo) return NextResponse.json({ error: "Categoría inválida" }, { status: 400 });
+    if (actual.rol !== "administrador") return NextResponse.json({ error: "Solo el administrador puede renombrar categorías familiares" }, { status: 403 });
+    const { error } = await supabase.from("tb_movimientos_financieros").update({ categoria: nueva }).eq("categoria", anterior).eq("tipo", tipo);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ guardado: true });
+  }
   const id = String(cuerpo.id ?? "");
   if (!id) return NextResponse.json({ error: "Registro inválido" }, { status: 400 });
 

@@ -213,6 +213,13 @@ export default function Home() {
   const [accionRapida, setAccionRapida] = useState<"ingreso" | "egreso" | "precio" | "historial" | null>(null);
   const cargasModulo = useRef<Record<string, number>>({});
 
+  useEffect(() => {
+    setOscuro(window.localStorage.getItem("familia-alania-tema") === "oscuro");
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("familia-alania-tema", oscuro ? "oscuro" : "claro");
+  }, [oscuro]);
+
   function abrirSeccion(nombre: string) {
     setSeccion(nombre);
     cargarModulo(nombre, true);
@@ -681,6 +688,7 @@ export default function Home() {
           modal === "Nuevo historial médico" ? <ModalHistorialRapido integranteId={integrantesVisibles.find((p)=>p.usuarioId===usuarioId)?.id ?? ""} onClose={() => setModal(null)} onSaved={() => { setModal(null); setVersionSalud((x)=>x+1); }} /> : <Modal
             titulo={modal}
             seccion={modalSeccion ?? seccion}
+            categoriasFinanzas={Array.from(new Set((registrosModulo.Finanzas ?? []).map((r) => r.categoria).filter(Boolean)))}
             onClose={() => { setModal(null); setModalSeccion(null); }}
             onSave={guardar}
           />
@@ -1825,8 +1833,10 @@ function GraficoResumenFinanzas({ registros, tipo }: { registros: Registro[]; ti
       const bw = Math.max(3, (w - 60) / 30);
       ingresos.forEach((v, i) => { const x = 48 + i * (w - 65) / 12; ctx.fillStyle = "#16a34a"; ctx.fillRect(x, 180 - v / max * 150, bw, v / max * 150); ctx.fillStyle = "#dc2626"; ctx.fillRect(x + bw + 2, 180 - egresos[i] / max * 150, bw, egresos[i] / max * 150); });
     } else {
-      const puntos=ahorro.map((v,i)=>({x:48+i*(w-65)/11,y:95-v/max*75}));
+      const minAhorro=Math.min(0,...ahorro), maxAhorro=Math.max(0,...ahorro), rango=Math.max(1,maxAhorro-minAhorro);
+      const puntos=ahorro.map((v,i)=>({x:48+i*(w-65)/11,y:180-(v-minAhorro)/rango*150}));
       ctx.beginPath(); puntos.forEach((p,i)=>{if(!i)ctx.moveTo(p.x,p.y);else{const a=puntos[i-1],m=(a.x+p.x)/2;ctx.bezierCurveTo(m,a.y,m,p.y,p.x,p.y);}}); ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 3; ctx.stroke();
+      puntos.forEach((p)=>{ctx.beginPath();ctx.fillStyle="#fff";ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#2563eb";ctx.stroke();});
     }
     ctx.fillStyle = "#64748b"; ctx.font = "9px Roboto"; ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].forEach((m, i) => ctx.fillText(m, 42 + i * (w - 65) / 12, 202));
   }, [registros, tipo]);
@@ -1874,13 +1884,17 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
     }
     setFilas([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]); onReload();
   }
+  async function renombrarCategoria(tipoCategoria:"ingreso"|"gasto", anterior:string, nueva:string) {
+    const respuesta=await fetch("/api/modulos?modulo=Finanzas",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({accion:"renombrar_categoria",tipo:tipoCategoria,anterior,nueva})});
+    if(respuesta.ok) onReload();
+  }
   return <>
     <TituloPagina etiqueta="GESTIÓN FAMILIAR" titulo="Finanzas" descripcion="Ingresos, egresos, ahorro y categorías familiares." onAdd={onAdd} textoBoton="Nuevo registro" />
     <section className="pestanas">{["Resumen","Ingresos","Egresos","Categorías"].map((x) => <button key={x} className={pestana === x ? "seleccionada" : ""} onClick={() => setPestana(x)}>{x}</button>)}</section>
     {pestana === "Resumen" && <>
       <div className="filtro-anio"><label>Año <select value={anio} onChange={(e) => setAnio(e.target.value)}>{[...new Set([String(new Date().getFullYear()), ...anios])].map((x) => <option key={x}>{x}</option>)}</select></label></div>
       <div className="grilla-graficos"><section className="tarjeta grafico-finanza"><h2>Ingresos vs. egresos</h2><GraficoResumenFinanzas registros={filtrados} tipo="barras" /></section><section className="tarjeta grafico-finanza"><h2>Ahorro</h2><GraficoResumenFinanzas registros={filtrados} tipo="linea" /></section></div>
-      <section className="tarjeta grafico-finanza pastel-finanzas"><h2>Distribución por categoría</h2><div className="pastel-interactivo"><div className="pastel" style={{ background: fondoPastel }} onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;let ang=(Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+450)%360;let suma=0;const elegido=gastosCategoria.find(([,m])=>{suma+=m/Math.max(totalGastos,1)*360;return ang<=suma;});setTooltipPastel(elegido?`${elegido[0]} · S/${elegido[1].toFixed(2)}`:"");}} onPointerLeave={()=>setTooltipPastel("")}/>{tooltipPastel&&<span className="tooltip-pastel">{tooltipPastel}</span>}</div><div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: S/{monto.toFixed(2)}</span>)}</div></section>
+      <section className="tarjeta grafico-finanza pastel-finanzas"><h2>Distribución por categoría</h2><div className="pastel-interactivo"><div className="pastel" style={{ background: fondoPastel }} onPointerMove={(e)=>{const rect=e.currentTarget.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;let ang=(Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI+450)%360;let suma=0;const elegido=gastosCategoria.find(([,m])=>{suma+=m/Math.max(totalGastos,1)*360;return ang<=suma;});setTooltipPastel(elegido?`${elegido[0]} · S/${elegido[1].toFixed(2)} · ${(elegido[1]/Math.max(totalGastos,1)*100).toFixed(1)}%`:"");}} onPointerLeave={()=>setTooltipPastel("")}/>{tooltipPastel&&<span className="tooltip-pastel">{tooltipPastel}</span>}</div><div>{gastosCategoria.map(([categoria, monto], i) => <span key={categoria} style={{ color: coloresPastel[i % coloresPastel.length] }}>● {categoria}: {(monto/Math.max(totalGastos,1)*100).toFixed(1)}%</span>)}</div></div><div className="tabla-apoyo"><div><b>Categoría</b><b>Monto</b><b>%</b></div>{gastosCategoria.map(([categoria,monto])=><div key={categoria}><span>{categoria}</span><span>S/{monto.toFixed(2)}</span><span>{(monto/Math.max(totalGastos,1)*100).toFixed(1)}%</span></div>)}</div></section>
     </>}
     {(pestana === "Ingresos" || pestana === "Egresos") && <>
       <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
@@ -1893,14 +1907,14 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
         {registros.filter((x)=>x.tipo===tipo).map((r)=><div className="fila-finanza guardada" key={r.id}><span>{new Date(`${r.fecha}T00:00:00`).toLocaleDateString("es-PE")}</span><span>{r.categoria}</span><span>{r.descripcion}</span><span>S/{Number(r.monto).toFixed(2)}</span><span>{r.observaciones}</span><span>{r.usuario} {(r.propio || true) && <button className="secundario" onClick={()=>setEditando(r)}>Editar</button>}</span></div>)}
       </div>
     </>}
-    {pestana === "Categorías" && <div className="grilla-categorias"><ListaCategorias titulo="Ingresos" categorias={categoriasIngreso} setCategorias={setCategoriasIngreso}/><ListaCategorias titulo="Egresos" categorias={categoriasEgreso} setCategorias={setCategoriasEgreso}/></div>}
+    {pestana === "Categorías" && <div className="grilla-categorias"><ListaCategorias titulo="Ingresos" categorias={Array.from(new Set([...categoriasIngreso,...registros.filter(x=>x.tipo==="ingreso").map(x=>x.categoria).filter(Boolean)]))} setCategorias={setCategoriasIngreso} tipo="ingreso" onRenombrar={renombrarCategoria}/><ListaCategorias titulo="Egresos" categorias={Array.from(new Set([...categoriasEgreso,...registros.filter(x=>x.tipo==="gasto").map(x=>x.categoria).filter(Boolean)]))} setCategorias={setCategoriasEgreso} tipo="gasto" onRenombrar={renombrarCategoria}/></div>}
     {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar registro</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const r=await fetch("/api/modulos?modulo=Finanzas",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id,...Object.fromEntries(new FormData(e.currentTarget))})});if(r.ok){setEditando(null);onReload();}}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" valorInicial={editando.fecha} obligatorio/><Campo nombre="categoria" etiqueta="Categoría" valorInicial={editando.categoria} obligatorio/><Campo nombre="descripcion" etiqueta="Detalle" valorInicial={editando.descripcion} obligatorio/><Campo nombre="monto" etiqueta="Importe" tipo="number" valorInicial={String(editando.monto)} obligatorio/><Campo nombre="observaciones" etiqueta="Observación" valorInicial={editando.observaciones} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button type="button" className="secundario" onClick={async()=>{if(confirm("¿Eliminar este registro?")){const r=await fetch("/api/modulos?modulo=Finanzas",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id})});if(r.ok){setEditando(null);onReload();}}}}>Eliminar</button><button className="primario">Guardar</button></div></form></section></div>}
   </>;
 }
 
-function ListaCategorias({ titulo, categorias, setCategorias }: { titulo:string; categorias:string[]; setCategorias:(x:string[])=>void }) {
+function ListaCategorias({ titulo, categorias, setCategorias, tipo, onRenombrar }: { titulo:string; categorias:string[]; setCategorias:(x:string[])=>void; tipo:"ingreso"|"gasto"; onRenombrar:(tipo:"ingreso"|"gasto",anterior:string,nueva:string)=>void }) {
   const [nueva,setNueva]=useState("");
-  return <section className="tarjeta lista-categorias"><h2>{titulo}</h2>{categorias.map((x)=><div key={x}>{x}<button onClick={()=>setCategorias(categorias.filter((c)=>c!==x))}>×</button></div>)}<form onSubmit={(e)=>{e.preventDefault();if(nueva){setCategorias([...categorias,nueva]);setNueva("");}}}><input value={nueva} onChange={(e)=>setNueva(e.target.value)} placeholder="Nueva categoría"/><button className="secundario">Agregar</button></form></section>;
+  return <section className="tarjeta lista-categorias"><h2>{titulo}</h2>{categorias.map((x)=><div key={x}>{x}<button onClick={()=>{const nuevaCategoria=prompt("Nuevo nombre de categoría",x)?.trim();if(nuevaCategoria&&nuevaCategoria!==x){setCategorias(categorias.map(c=>c===x?nuevaCategoria:c));onRenombrar(tipo,x,nuevaCategoria);}}}>Editar</button></div>)}<form onSubmit={(e)=>{e.preventDefault();if(nueva){setCategorias([...categorias,nueva]);setNueva("");}}}><input value={nueva} onChange={(e)=>setNueva(e.target.value)} placeholder="Nueva categoría"/><button className="secundario">Agregar</button></form></section>;
 }
 
 function VistaProyectosEventos({ registros, onAdd, onReload }: { registros:Registro[]; onAdd:()=>void; onReload:()=>void }) {
@@ -3251,14 +3265,19 @@ function ModalHistorialRapido({ integranteId, onClose, onSaved }: { integranteId
 function Modal({
   titulo,
   seccion,
+  categoriasFinanzas = [],
   onClose,
   onSave,
 }: {
   titulo: string;
   seccion: string;
+  categoriasFinanzas?: string[];
   onClose: () => void;
   onSave: (e: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [tipoFinanza, setTipoFinanza] = useState(titulo.toLowerCase().includes("egreso") ? "gasto" : "ingreso");
+  const categoriasBase = tipoFinanza === "ingreso" ? categoriasIngresoIniciales : categoriasEgresoIniciales;
+  const categorias = Array.from(new Set([...categoriasBase, ...categoriasFinanzas]));
   return (
     <div
       className="velo"
@@ -3347,10 +3366,10 @@ function Modal({
               </>
             )}
             {seccion === "Finanzas" && <>
-              <CampoSelect nombre="tipo" etiqueta="Tipo" opciones={["ingreso", "gasto"]} obligatorio />
+              <label><span>Tipo <b className="obligatorio">*</b></span><select name="tipo" value={tipoFinanza} onChange={(e)=>setTipoFinanza(e.target.value)}><option value="ingreso">Ingreso</option><option value="gasto">Egreso</option></select></label>
               <Campo nombre="fecha" etiqueta="Fecha" tipo="date" obligatorio />
               <Campo nombre="descripcion" etiqueta="Descripción" obligatorio ancho />
-              <Campo nombre="categoria" etiqueta="Categoría" obligatorio />
+              <label><span>Categoría <b className="obligatorio">*</b></span><select name="categoria" required><option value="">Selecciona</option>{categorias.map((categoria)=><option key={categoria}>{categoria}</option>)}</select></label>
               <Campo nombre="monto" etiqueta="Monto (S/)" tipo="number" obligatorio />
               <Campo nombre="observaciones" etiqueta="Observaciones" ancho />
             </>}
