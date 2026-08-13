@@ -201,6 +201,8 @@ export default function Home() {
   const [integrantesBd, setIntegrantesBd] = useState<Integrante[]>([]);
   const [precios, setPrecios] = useState<Registro[]>([]);
   const [registrosModulo, setRegistrosModulo] = useState<Record<string, Registro[]>>({});
+  const [categoriasFinanzas, setCategoriasFinanzas] = useState<Array<{tipo:"ingreso"|"gasto";nombre:string}>>([]);
+  const [cargando, setCargando] = useState(false);
   const [proyectosAbiertos, setProyectosAbiertos] = useState(0);
   const [usuarioId, setUsuarioId] = useState("");
   const [rolSesion, setRolSesion] = useState<"administrador" | "integrante">(
@@ -215,7 +217,10 @@ export default function Home() {
 
   useEffect(() => {
     setOscuro(window.localStorage.getItem("familia-alania-tema") === "oscuro");
+    setSeccion(window.sessionStorage.getItem("familia-alania-seccion") || "Inicio");
   }, []);
+  useEffect(() => { window.sessionStorage.setItem("familia-alania-seccion", seccion); }, [seccion]);
+  useEffect(() => { if (sesion) cargarModulo(seccion, true); }, [sesion, seccion]);
   useEffect(() => {
     window.localStorage.setItem("familia-alania-tema", oscuro ? "oscuro" : "claro");
   }, [oscuro]);
@@ -348,11 +353,15 @@ export default function Home() {
     if (["Inicio", "Integrantes", "Salud"].includes(nombre)) return;
     if (!forzar && Date.now() - (cargasModulo.current[nombre] ?? 0) < 30_000)
       return;
-    const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(nombre)}`);
-    if (!respuesta.ok) return;
-    const json = await respuesta.json();
-    cargasModulo.current[nombre] = Date.now();
-    setRegistrosModulo((actual) => ({ ...actual, [nombre]: json.registros ?? [] }));
+    setCargando(true);
+    try {
+      const respuesta = await fetch(`/api/modulos?modulo=${encodeURIComponent(nombre)}`, { cache: forzar ? "no-store" : "default" });
+      if (!respuesta.ok) return;
+      const json = await respuesta.json();
+      cargasModulo.current[nombre] = Date.now();
+      setRegistrosModulo((actual) => ({ ...actual, [nombre]: json.registros ?? [] }));
+      if (nombre === "Finanzas") setCategoriasFinanzas(json.categorias ?? []);
+    } finally { setCargando(false); }
   }
 
   useEffect(() => {
@@ -504,6 +513,7 @@ export default function Home() {
 
   return (
     <div className={`aplicacion ${oscuro ? "dark" : ""} tema-${seccion.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s+/g, "-")}`}>
+      {cargando && <div className="carga-pollito" role="status" aria-live="polite"><span>🐥</span><b>Actualizando…</b></div>}
       <main className="contenido">
         <header className="barra">
           <div className="marca-nav" title="Familia Alania">
@@ -619,6 +629,7 @@ export default function Home() {
           ) : seccion === "Finanzas" ? (
             <VistaFinanzas
               registros={registrosModulo.Finanzas ?? []}
+              categoriasCompartidas={categoriasFinanzas}
               accionRapida={accionRapida}
               onAccionUsada={() => setAccionRapida(null)}
               onAdd={() => setModal("Nuevo registro · Finanzas")}
@@ -1850,8 +1861,8 @@ function GraficoResumenFinanzas({ registros }: { registros: Registro[] }) {
   />{tooltip&&<span className="tooltip-grafico" style={{left:tooltip.x}}>{tooltip.texto}</span>}</div>;
 }
 
-function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada }: { registros: Registro[]; onAdd: () => void; onReload: () => void; accionRapida: string | null; onAccionUsada: () => void }) {
-  const [pestana, setPestana] = useState("Resumen");
+function VistaFinanzas({ registros, categoriasCompartidas, onAdd, onReload, accionRapida, onAccionUsada }: { registros: Registro[]; categoriasCompartidas:Array<{tipo:"ingreso"|"gasto";nombre:string}>; onAdd: () => void; onReload: () => void; accionRapida: string | null; onAccionUsada: () => void }) {
+  const [pestana, setPestana] = useState(() => typeof window === "undefined" ? "Resumen" : sessionStorage.getItem("finanzas-pestana") || "Resumen");
   const anios = Array.from(new Set(registros.map((x) => String(x.fecha ?? "").slice(0, 4)).filter(Boolean)));
   const [anio, setAnio] = useState(String(new Date().getFullYear()));
   const [categoriasIngreso, setCategoriasIngreso] = useState(categoriasIngresoIniciales);
@@ -1859,6 +1870,12 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
   const [filas, setFilas] = useState<FilaFinanza[]>([{ fecha: "", categoria: "", descripcion: "", monto: "", observaciones: "" }]);
   const [tooltipPastel,setTooltipPastel]=useState("");
   const [editando,setEditando]=useState<Registro|null>(null);
+  const [mes,setMes]=useState(new Date().toLocaleDateString("sv-SE").slice(0,7));
+  useEffect(()=>{sessionStorage.setItem("finanzas-pestana",pestana);if(pestana==="Resumen")onReload();},[pestana]);
+  useEffect(()=>{
+    setCategoriasIngreso(Array.from(new Set([...categoriasIngresoIniciales,...categoriasCompartidas.filter(c=>c.tipo==="ingreso").map(c=>c.nombre)])));
+    setCategoriasEgreso(Array.from(new Set([...categoriasEgresoIniciales,...categoriasCompartidas.filter(c=>c.tipo==="gasto").map(c=>c.nombre)])));
+  },[categoriasCompartidas]);
   useEffect(() => { if (accionRapida === "ingreso" || accionRapida === "egreso") { setPestana(accionRapida === "ingreso" ? "Ingresos" : "Egresos"); onAccionUsada(); } }, [accionRapida, onAccionUsada]);
   const filtrados = registros.filter((x) => String(x.fecha).startsWith(anio));
   const gastosCategoria = Array.from(
@@ -1898,6 +1915,7 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
       <section className="tarjeta grafico-finanza"><h2>Distribución por categoría por mes</h2><div className="tabla-apoyo resumen-mensual"><div><b>Categorías</b>{["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].map(m=><b key={m}>{m}</b>)}</div>{gastosCategoria.map(([categoria])=><div key={categoria}><b>{categoria}</b>{Array.from({length:12},(_,i)=>{const monto=filtrados.filter(r=>r.tipo==="gasto"&&r.categoria===categoria&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0);const totalMes=filtrados.filter(r=>r.tipo==="gasto"&&new Date(`${r.fecha}T00:00:00`).getMonth()===i).reduce((s,r)=>s+Number(r.monto),0);return <span key={i}>S/{monto.toFixed(0)}<small>{totalMes?(monto/totalMes*100).toFixed(0):0}%</small></span>})}</div>)}</div></section>
     </>}
     {(pestana === "Ingresos" || pestana === "Egresos") && <>
+      <div className="filtro-anio"><label>Mes <input type="month" value={mes} onChange={(e)=>setMes(e.target.value)}/></label></div>
       <div className="acciones-editor"><button className="secundario" onClick={() => setFilas([...filas, { fecha:"",categoria:"",descripcion:"",monto:"",observaciones:"" }])}>+ Agregar fila</button><button className="primario" onClick={guardarFilas}>Guardar registro</button></div>
       <div className="tarjeta tabla-editor-finanzas"><div className="fila-finanza cabecera"><b>Fecha</b><b>Categoría</b><b>Detalle</b><b>Importe</b><b>Observación</b><b>Usuario</b></div>
         {filas.map((f, i) => <div className="fila-finanza" key={i}>
@@ -1905,17 +1923,17 @@ function VistaFinanzas({ registros, onAdd, onReload, accionRapida, onAccionUsada
           <select value={f.categoria} onChange={(e) => setFilas(filas.map((x,n)=>n===i?{...x,categoria:e.target.value,fecha:x.fecha||new Date().toLocaleDateString("sv-SE")}:x))}><option value="">Selecciona</option>{categorias.map((x)=><option key={x}>{x}</option>)}</select>
           <input value={f.descripcion} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,descripcion:e.target.value}:x))}/><input type="number" step="0.01" value={f.monto} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,monto:e.target.value}:x))}/><input value={f.observaciones} onChange={(e)=>setFilas(filas.map((x,n)=>n===i?{...x,observaciones:e.target.value}:x))}/><span>Usuario actual</span>
         </div>)}
-        {registros.filter((x)=>x.tipo===tipo).map((r)=><div className={`fila-finanza guardada ${r.tipo==="ingreso"?"movimiento-ingreso":"movimiento-egreso"}`} key={r.id}><span>{new Date(`${r.fecha}T00:00:00`).toLocaleDateString("es-PE")}</span><span>{r.categoria}</span><span>{r.descripcion}</span><span>{r.tipo==="ingreso"?"+":"-"} S/{Number(r.monto).toFixed(2)}</span><span>{r.observaciones}</span><span>{r.usuario} {(r.propio || true) && <button className="secundario" onClick={()=>setEditando(r)}>Editar</button>}</span></div>)}
+        {registros.filter((x)=>x.tipo===tipo&&String(x.fecha).startsWith(mes)).map((r)=><div className={`fila-finanza guardada ${r.tipo==="ingreso"?"movimiento-ingreso":"movimiento-egreso"}`} key={r.id}><span>{new Date(`${r.fecha}T00:00:00`).toLocaleDateString("es-PE")}</span><span>{r.categoria}</span><span>{r.descripcion}</span><span>{r.tipo==="ingreso"?"+":"-"} S/{Number(r.monto).toFixed(2)}</span><span>{r.observaciones}</span><span>{r.usuario} {r.propio && <button className="secundario" onClick={()=>setEditando(r)}>Editar</button>}</span></div>)}
       </div>
     </>}
-    {pestana === "Categorías" && <div className="grilla-categorias"><ListaCategorias titulo="Ingresos" categorias={Array.from(new Set([...categoriasIngreso,...registros.filter(x=>x.tipo==="ingreso").map(x=>x.categoria).filter(Boolean)]))} setCategorias={setCategoriasIngreso} tipo="ingreso" onRenombrar={renombrarCategoria}/><ListaCategorias titulo="Egresos" categorias={Array.from(new Set([...categoriasEgreso,...registros.filter(x=>x.tipo==="gasto").map(x=>x.categoria).filter(Boolean)]))} setCategorias={setCategoriasEgreso} tipo="gasto" onRenombrar={renombrarCategoria}/></div>}
+    {pestana === "Categorías" && <div className="grilla-categorias"><ListaCategorias titulo="Ingresos" categorias={categoriasIngreso} setCategorias={setCategoriasIngreso} tipo="ingreso" onRenombrar={renombrarCategoria} onReload={onReload}/><ListaCategorias titulo="Egresos" categorias={categoriasEgreso} setCategorias={setCategoriasEgreso} tipo="gasto" onRenombrar={renombrarCategoria} onReload={onReload}/></div>}
     {editando&&<div className="velo"><section className="modal modal-corta"><div className="modal-cabecera"><h2>Editar registro</h2><button className="boton-icono" onClick={()=>setEditando(null)}>×</button></div><form onSubmit={async(e)=>{e.preventDefault();const r=await fetch("/api/modulos?modulo=Finanzas",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id,...Object.fromEntries(new FormData(e.currentTarget))})});if(r.ok){setEditando(null);onReload();}}}><div className="campos"><Campo nombre="fecha" etiqueta="Fecha" tipo="date" valorInicial={editando.fecha} obligatorio/><Campo nombre="categoria" etiqueta="Categoría" valorInicial={editando.categoria} obligatorio/><Campo nombre="descripcion" etiqueta="Detalle" valorInicial={editando.descripcion} obligatorio/><Campo nombre="monto" etiqueta="Importe" tipo="number" valorInicial={String(editando.monto)} obligatorio/><Campo nombre="observaciones" etiqueta="Observación" valorInicial={editando.observaciones} ancho/></div><div className="modal-acciones"><button type="button" className="secundario" onClick={()=>setEditando(null)}>Cancelar</button><button type="button" className="secundario" onClick={async()=>{if(confirm("¿Eliminar este registro?")){const r=await fetch("/api/modulos?modulo=Finanzas",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:editando.id})});if(r.ok){setEditando(null);onReload();}}}}>Eliminar</button><button className="primario">Guardar</button></div></form></section></div>}
   </>;
 }
 
-function ListaCategorias({ titulo, categorias, setCategorias, tipo, onRenombrar }: { titulo:string; categorias:string[]; setCategorias:(x:string[])=>void; tipo:"ingreso"|"gasto"; onRenombrar:(tipo:"ingreso"|"gasto",anterior:string,nueva:string)=>void }) {
+function ListaCategorias({ titulo, categorias, setCategorias, tipo, onRenombrar, onReload }: { titulo:string; categorias:string[]; setCategorias:(x:string[])=>void; tipo:"ingreso"|"gasto"; onRenombrar:(tipo:"ingreso"|"gasto",anterior:string,nueva:string)=>void; onReload:()=>void }) {
   const [nueva,setNueva]=useState("");
-  return <section className="tarjeta lista-categorias"><h2>{titulo}</h2>{categorias.map((x)=><div key={x}>{x}<button onClick={()=>{const nuevaCategoria=prompt("Nuevo nombre de categoría",x)?.trim();if(nuevaCategoria&&nuevaCategoria!==x){setCategorias(categorias.map(c=>c===x?nuevaCategoria:c));onRenombrar(tipo,x,nuevaCategoria);}}}>Editar</button></div>)}<form onSubmit={(e)=>{e.preventDefault();if(nueva){setCategorias([...categorias,nueva]);setNueva("");}}}><input value={nueva} onChange={(e)=>setNueva(e.target.value)} placeholder="Nueva categoría"/><button className="secundario">Agregar</button></form></section>;
+  return <section className="tarjeta lista-categorias"><h2>{titulo}</h2>{categorias.map((x)=><div key={x}>{x}<button onClick={()=>{const nuevaCategoria=prompt("Nuevo nombre de categoría",x)?.trim();if(nuevaCategoria&&nuevaCategoria!==x){setCategorias(categorias.map(c=>c===x?nuevaCategoria:c));onRenombrar(tipo,x,nuevaCategoria);}}}>Editar</button></div>)}<form onSubmit={async(e)=>{e.preventDefault();if(nueva){const f=new FormData();f.set("accion","categoria");f.set("tipo",tipo);f.set("nombre",nueva);const r=await fetch("/api/modulos?modulo=Finanzas",{method:"POST",body:f});if(r.ok){setCategorias([...categorias,nueva]);setNueva("");onReload();}}}}><input value={nueva} onChange={(e)=>setNueva(e.target.value)} placeholder="Nueva categoría"/><button className="secundario">Agregar</button></form></section>;
 }
 
 function VistaProyectosEventos({ registros, onAdd, onReload }: { registros:Registro[]; onAdd:()=>void; onReload:()=>void }) {

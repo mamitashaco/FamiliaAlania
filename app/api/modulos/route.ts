@@ -45,7 +45,10 @@ export async function GET(request: NextRequest) {
 
   if (modulo === "Finanzas") {
     const propioId = await integranteActual(actual.usuarioId);
-    const r = await supabase.from("tb_movimientos_financieros").select("*,tb_integrantes(nombre_completo)").order("fecha", { ascending: false });
+    const [r, categorias] = await Promise.all([
+      supabase.from("tb_movimientos_financieros").select("*,tb_integrantes(nombre_completo)").order("fecha", { ascending: false }),
+      supabase.from("tb_categorias_financieras").select("tipo,nombre").order("nombre"),
+    ]);
     error = r.error; registros = (r.data ?? []).map((x) => ({
       titulo: x.descripcion, detalle: `${x.tipo} · ${x.categoria ?? "Sin categoría"}`,
       meta: new Date(`${x.fecha}T00:00:00`).toLocaleDateString("es-PE"),
@@ -55,6 +58,8 @@ export async function GET(request: NextRequest) {
       propio: x.integrante_id === propioId,
       usuario: (Array.isArray(x.tb_integrantes) ? x.tb_integrantes[0] : x.tb_integrantes)?.nombre_completo ?? "Usuario",
     }));
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ registros, categorias: categorias.data ?? [] });
   } else if (modulo === "Seguros") {
     const r = await supabase.from("tb_seguros").select("*,tb_integrantes(nombre_completo)").order("fin_vigencia", { ascending: true });
     error = r.error; registros = await Promise.all((r.data ?? []).map(async (x) => ({
@@ -155,6 +160,15 @@ export async function POST(request: NextRequest) {
   let error: { message: string } | null = null;
 
   if (modulo === "Finanzas") {
+    if (valor("accion") === "categoria") {
+      const tipo = valor("tipo");
+      const nombre = valor("nombre");
+      if (!nombre || !["ingreso", "gasto"].includes(tipo))
+        return NextResponse.json({ error: "Categoría inválida" }, { status: 400 });
+      const { error: errorCategoria } = await supabase.from("tb_categorias_financieras").upsert({ tipo, nombre, creado_por: actual.usuarioId }, { onConflict: "tipo,nombre" });
+      if (errorCategoria) return NextResponse.json({ error: errorCategoria.message }, { status: 500 });
+      return NextResponse.json({ guardado: true }, { status: 201 });
+    }
     ({ error } = await supabase.from("tb_movimientos_financieros").insert({
       integrante_id: integranteId, tipo: valor("tipo"), categoria: valor("categoria") || null,
       descripcion: valor("descripcion"), monto: Number(valor("monto")), fecha: valor("fecha"),
@@ -317,7 +331,7 @@ export async function PATCH(request: NextRequest) {
   } else if (modulo === "Finanzas") {
     const { data } = await supabase.from("tb_movimientos_financieros").select("integrante_id,fecha").eq("id", id).single();
     const mesActual = new Date().toLocaleDateString("sv-SE").slice(0,7);
-    if (actual.rol !== "administrador" && (data?.integrante_id !== propioId || !String(data?.fecha ?? "").startsWith(mesActual)))
+    if (data?.integrante_id !== propioId || !String(data?.fecha ?? "").startsWith(mesActual))
       return NextResponse.json({ error: "Solo puedes editar tus registros del mes actual" }, { status: 403 });
     const { error } = await supabase.from("tb_movimientos_financieros").update({
       fecha: cuerpo.fecha, categoria: cuerpo.categoria || null, descripcion: cuerpo.descripcion,
@@ -338,7 +352,7 @@ export async function DELETE(request: NextRequest) {
     const propioId = await integranteActual(actual.usuarioId);
     const { data } = await supabase.from("tb_movimientos_financieros").select("integrante_id,fecha").eq("id", id).single();
     const mesActual = new Date().toLocaleDateString("sv-SE").slice(0,7);
-    if (actual.rol !== "administrador" && (data?.integrante_id !== propioId || !String(data?.fecha ?? "").startsWith(mesActual))) return NextResponse.json({ error: "Solo puedes eliminar tus registros del mes actual" }, { status: 403 });
+    if (data?.integrante_id !== propioId || !String(data?.fecha ?? "").startsWith(mesActual)) return NextResponse.json({ error: "Solo puedes eliminar tus registros del mes actual" }, { status: 403 });
     const { error } = await supabase.from("tb_movimientos_financieros").delete().eq("id", id);
     if (error) return NextResponse.json({ error:error.message }, { status:500 });
   } else if (modulo === "Proyectos y eventos") {

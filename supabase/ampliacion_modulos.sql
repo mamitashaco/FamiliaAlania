@@ -28,6 +28,15 @@ create table if not exists tb_configuracion_sistema (
   actualizado_en timestamptz not null default now()
 );
 
+create table if not exists tb_categorias_financieras (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null check (tipo in ('ingreso', 'gasto')),
+  nombre text not null,
+  creado_por uuid references tb_usuarios(id) on delete set null,
+  creado_en timestamptz not null default now(),
+  unique(tipo, nombre)
+);
+
 create index if not exists idx_tb_historial_accesos_fecha
   on tb_historial_accesos(creado_en desc);
 create index if not exists idx_tb_eventos_compromisos_evento
@@ -46,3 +55,4 @@ alter table tb_eventos_compromisos
 alter table tb_historial_accesos enable row level security;
 alter table tb_eventos_compromisos enable row level security;
 alter table tb_configuracion_sistema enable row level security;
+alter table tb_categorias_financieras enable row level security;
